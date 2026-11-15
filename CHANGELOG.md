@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### A new home
+world.txt now lives at github.com/NIH-Industries/world.txt, and Homebrew
+installs it from the nih-industries tap (`brew install nih-industries/tap/world-txt`).
+The old addresses redirect, so nothing breaks in the meantime.
+
 ### Nobody gets hurt
 Try to kill, punch or stab anyone (or anything) and it comes out as
 something soft instead: a hug, a boop on the nose, a daisy, a dance-off.

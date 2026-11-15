@@ -3,7 +3,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (websocket "1.15"))
 ;; Keywords: games
-;; URL: https://github.com/markryall/world.txt
+;; URL: https://github.com/NIH-Industries/world.txt
 
 ;;; Commentary:
 
@@ -525,7 +525,7 @@ Links are `[label](https://…)' or a bare https link (src/links.rs)."
                :filter (lambda (_p out) (world-txt--from-helper w out))
                :sentinel (lambda (p _event) (world-txt--helper-gone w p))))
       (setf (world-txt-world-no-helper w)
-            "Sound needs world.txt itself (brew install markryall/tap/world-txt), then C-c C-r."))))
+            "Sound needs world.txt itself (brew install nih-industries/tap/world-txt), then C-c C-r."))))
 
 (defun world-txt--stop-helper (w)
   (when (world-txt--helper-live-p w)

@@ -4,7 +4,7 @@ A small shared island made of text. You can wander, chat, dig ponds, plant trees
 name places and make things. There are no battles, just bonhomie.
 
 ```
-brew install markryall/tap/world-txt  # or: make install (builds ~/.local/bin/world.txt)
+brew install nih-industries/tap/world-txt  # or: make install (builds ~/.local/bin/world.txt)
 world.txt serve                      # opens the world on :4040, saves to world.db
 world.txt invite Mark --keeper       # your account, and its magic link: open it!
 world.txt play --invite <link>       # or the terminal client (just `world.txt play` after)

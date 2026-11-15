@@ -16,7 +16,7 @@ hosting = "github"
 # Whether to install an updater program
 install-updater = false
 # The Homebrew tap the formula goes in; `mise run release` pushes it there
-tap = "markryall/homebrew-tap"
+tap = "NIH-Industries/homebrew-tap"
 # The formula's name in the tap
 formula = "world-txt"
 # Cargo won't put a "." in a binary name, so the formula and installer add one

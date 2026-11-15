@@ -64,7 +64,7 @@ pub fn how_to_join(url: Option<&str>, token: &str) -> Vec<String> {
     vec![
         "In a browser (phones too): just open the link.".to_string(),
         format!(
-            "In a terminal (brew install markryall/tap/world-txt): world.txt play --server {server} --invite {token}"
+            "In a terminal (brew install nih-industries/tap/world-txt): world.txt play --server {server} --invite {token}"
         ),
         format!("  and after that, world.txt play --server {server} is all it takes."),
     ]
