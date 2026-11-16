@@ -41,7 +41,11 @@
   /* One line each, so a long place name never pushes the map about: anything
      too long ends in … (the whole of it shows on hover). */
   #place, #weather, #clock, #now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; flex-shrink: 0; }
-  #map { font-size: 16px; line-height: 1.15; white-space: pre; text-align: center; padding: 6px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  /* Menlo, not the page's ui-monospace: in Safari that's SF Mono, which lacks
+     the map's symbols (♣ ✦ ☺ ⌂ ▣ ☼ •). WebKit borrowed them from Menlo at its
+     own width, a quarter pixel narrower than an SF Mono cell, so rows drifted
+     out of line. In Menlo every symbol is one width. */
+  #map { font-family: Menlo, "DejaVu Sans Mono", monospace; font-size: 16px; line-height: 1.15; white-space: pre; text-align: center; padding: 6px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .meta { color: var(--dim); font-size: 13px; }
   #pad { display: grid; grid-template-columns: repeat(3, 52px); gap: 6px; justify-content: center; }
   #pad button, .quick button {

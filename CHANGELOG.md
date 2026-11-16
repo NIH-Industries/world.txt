@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### A straighter map
+In Safari (and other WebKit browsers) the side panel's map no longer
+wanders: its columns line up again.
+
 ### A new home
 world.txt now lives at github.com/NIH-Industries/world.txt, and Homebrew
 installs it from the nih-industries tap (`brew install nih-industries/tap/world-txt`).
