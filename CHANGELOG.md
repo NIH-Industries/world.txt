@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Links with words
+Events and gathering tables take links with words, like noticeboards do:
+`meet [the call](https://…) [the board](https://…)` or
+`event here weekdays 9am Standup [the call](https://…) [the board](https://…)`.
+Everyone sees "the call · the board", each clickable in the browser, rather
+than two long addresses. Plain https links still work, up to three in all.
+
+### Change an event's links
+`event links 1 [the call](https://…)` changes an event's links without
+cancelling it (its host or a keeper; `event links 1 off` clears them), so
+who's going and how it repeats stay put. And `meet` at a gathering table
+while an event is on now hands over the event's own links first, then the
+table's, so several events at one table can each have their own call.
+
+### Friendlier, not flirtier
+The world calls you "friend" now instead of "babe" when it can't make
+sense of you or asks you to slow down. The first-steps hint
+now reads: type "say hi" and everyone here will hear you, instead of the
+puzzling "type 'hi".
+
 ### A straighter map
 In Safari (and other WebKit browsers) the side panel's map no longer
 wanders: its columns line up again.

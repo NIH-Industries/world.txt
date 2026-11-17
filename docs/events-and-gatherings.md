@@ -44,6 +44,10 @@ going can), and `remove Poppy from event 1` takes someone off (the host or a
 keeper; anyone can drop themselves with `not going 1`).
 A place event's links are only shown to people who are in on it (going,
 following its board, or standing nearby); everyone else sees that it has one.
+Its host or a keeper can change an event's links any time without cancelling
+it: `event links 1 [the call](https://…) [the board](https://…)` swaps them
+for these, and `event links 1 off` clears them. Who's going and how it
+repeats stay just as they were.
 
 ## Gatherings
 
@@ -52,12 +56,18 @@ Somewhere to gather, with links for whatever's going on: a call, a list, a song.
 `make a gathering table` (or a gazebo) makes a gathering spot, and its maker, the
 home's owner or a keeper leaves its links there:
 `meet https://example.com/gathering https://example.com/snack-list` (up to
-three; `meet off` clears them). Anyone standing there sees them when they look,
+three; `meet off` clears them). Links can have words, like on a noticeboard:
+`meet [the call](https://example.com/gathering) [snack list](https://example.com/snacks)`
+shows "the call · snack list", each clickable in the browser (the terminal
+shows the address beside it). Anyone standing there sees them when they look,
 and `meet` hands them to you and tells everyone there you've headed off to the
-gathering. Events can carry links too, `event here fri 4pm Tea party https://…`,
+gathering. Events can carry links too, `event here fri 4pm Tea party https://…`
+(or `[the call](https://…)`, with words),
 and one planned at a gathering table uses the table's. They show in `events`, the
 reminder and the "starting now" shout, and `meet` at an event's spot while it's
-on hands them over, each clickable on its own. In the browser, https links anywhere (lines and board
+on hands them over, each clickable on its own: the event's own first, then the
+table's (so each event can have its own call, and the table holds what they
+share, like the team's board). In the browser, https links anywhere (lines and board
 notes) open in a new tab.
 
 ## Noticeboards

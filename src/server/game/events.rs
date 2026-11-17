@@ -329,6 +329,18 @@ fn pick(events: Vec<EventRow>, which: &str) -> Option<EventRow> {
     if named.len() == 1 { named.pop() } else { None }
 }
 
+/// "2 [the call](https://…)" → which event ("2"), its new links, and
+/// whether it's "off" (clear them) instead.
+fn links_words(text: &str) -> (String, Option<String>, bool) {
+    let (which, link) = super::meetings::split_link(text);
+    let (rest, last) = which.rsplit_once(' ').unwrap_or(("", which.as_str()));
+    if matches!(last.to_lowercase().as_str(), "off" | "clear" | "none") {
+        (rest.to_string(), None, true)
+    } else {
+        (which.clone(), link, false)
+    }
+}
+
 impl Game {
     /// Who hears about an event: everyone online, or for a place event its
     /// host, whoever's going, followers of a noticeboard on that spot, and
@@ -384,6 +396,13 @@ impl Game {
     }
 
     pub(super) fn cmd_event(&mut self, id: u64, text: &str) -> anyhow::Result<()> {
+        if let Some(rest) = text
+            .trim_start()
+            .strip_prefix("links")
+            .filter(|r| r.is_empty() || r.starts_with(char::is_whitespace))
+        {
+            return self.cmd_event_links(id, rest);
+        }
         let Some((x, y, _)) = self.here(id) else {
             return Ok(());
         };
@@ -1064,6 +1083,42 @@ impl Game {
         Ok(())
     }
 
+    /// `event links 1 [the call](https://…) https://…` swaps an event's links
+    /// for these, and `event links 1 off` clears them. Its host or a keeper.
+    pub(super) fn cmd_event_links(&mut self, id: u64, text: &str) -> anyhow::Result<()> {
+        let (which, link, off) = links_words(text);
+        if link.is_none() && !off {
+            self.say1(id, Line::plain("Which links? e.g. 'event links 1 [the call](https://…) [the board](https://…)', or 'event links 1 off' to clear them."));
+            return Ok(());
+        }
+        let Some(e) = self.pick_event(&which)? else {
+            self.say1(
+                id,
+                Line::plain("Which event? 'events' lists them, then e.g. 'event links 2 [the call](https://…)'."),
+            );
+            return Ok(());
+        };
+        let me = self.user(id);
+        if e.host != me && !self.is_keeper(&me) {
+            self.say1(
+                id,
+                Line::plain("Only its host or a keeper can change its links."),
+            );
+            return Ok(());
+        }
+        let link = if off { None } else { link };
+        self.world.db.set_event_link(e.id, link.as_deref())?;
+        let line = match &link {
+            Some(l) => Line::new()
+                .c(Col::Cyan, format!("🔗 {} now has ", e.name))
+                .c(Col::Cyan, super::meetings::shown(l))
+                .c(Col::Dim, ". Everyone in on it gets them with the reminders."),
+            None => Line::col(Col::Cyan, format!("🔗 {} has no links of its own now.", e.name)),
+        };
+        self.say1(id, line);
+        Ok(())
+    }
+
     /// The call link of an event happening at (x, y) right now, for `meet`.
     pub(super) fn event_link_now(&self, x: i64, y: i64) -> Option<String> {
         let now = super::boards::now();
@@ -1371,6 +1426,22 @@ mod tests {
             split_names("Poppy, Sam and @Lu & Jo"),
             vec!["Poppy", "Sam", "Lu", "Jo"]
         );
+    }
+
+    #[test]
+    fn reads_which_event_gets_which_links() {
+        let (which, link, off) = links_words("2 [the call](https://meet.example.com/a) https://example.com/b");
+        assert_eq!(which, "2");
+        assert_eq!(
+            link.as_deref(),
+            Some("[the call](https://meet.example.com/a) https://example.com/b")
+        );
+        assert!(!off);
+        let (which, link, _) = links_words("Morning standup [the call](https://meet.example.com/a)");
+        assert_eq!((which.as_str(), link.is_some()), ("Morning standup", true));
+        assert_eq!(links_words("1 off"), ("1".into(), None, true));
+        assert_eq!(links_words("off"), ("".into(), None, true));
+        assert_eq!(links_words("2"), ("2".into(), None, false));
     }
 
     #[test]

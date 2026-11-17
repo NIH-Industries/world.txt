@@ -1335,7 +1335,7 @@ impl Game {
 
     fn cmd_say(&mut self, id: u64, msg: &str) -> anyhow::Result<()> {
         if msg.is_empty() {
-            self.say1(id, Line::plain("Say what, babe?"));
+            self.say1(id, Line::plain("Say what, friend?"));
             return Ok(());
         }
         let Some(p) = self.players.get(&id) else {
@@ -4218,8 +4218,8 @@ const HELP: &[HelpTopic] = &[
                 "2. somewhere to gather (a gazebo works too)",
             ),
             (
-                "meet https://… https://…",
-                "3. leave links there for whatever you get up to (up to three)",
+                "meet [the call](https://…) https://…",
+                "3. leave links there for whatever you get up to (up to three; words in [ ] show instead of the address)",
             ),
             (
                 "event here weekdays 7am Sunrise stretch",
@@ -4345,6 +4345,10 @@ const HELP: &[HelpTopic] = &[
             (
                 "event fri 4pm Tea party https://…",
                 "an event with links (at a gathering table, it uses the table's)",
+            ),
+            (
+                "event links 1 [the call](https://…)",
+                "change an event's links (event links 1 off clears them)",
             ),
             (
                 "station add Night Owl FM https://… [guide https://…]",

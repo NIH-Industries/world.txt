@@ -40,33 +40,72 @@ pub fn clean_link(raw: &str) -> Option<String> {
 /// How many links one event or meeting spot keeps (a call, a board, notes).
 const MAX_LINKS: usize = 3;
 
-/// Take the links out of some words: "Standup https://meet… https://trello…"
-/// → ("Standup", "https://meet… https://trello…"). Several are kept
-/// together, a space apart.
+/// Take the links out of some words, bare (`https://…`) or with words
+/// (`[the snack list](https://…)`): "Standup [the call](https://meet…)
+/// https://trello…" → ("Standup", "[the call](https://meet…) https://trello…").
+/// Several are kept together, a space apart.
 pub fn split_link(text: &str) -> (String, Option<String>) {
-    let mut links: Vec<String> = Vec::new();
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .filter(|w| {
-            if links.len() < MAX_LINKS
-                && w.starts_with("https://")
-                && let Some(l) = clean_link(w)
-            {
-                links.push(l);
-                return false;
-            }
-            true
-        })
-        .collect();
-    (
-        words.join(" "),
-        (!links.is_empty()).then(|| links.join(" ")),
-    )
+    let (rest, links) = take_links(text, MAX_LINKS);
+    (rest, (!links.is_empty()).then(|| links.join(" ")))
 }
 
-/// Links kept together, for reading: "https://a · https://b".
+/// The links kept together, one each: "[the call](https://a)", "https://b".
+pub fn list(links: &str) -> Vec<String> {
+    take_links(links, usize::MAX).1
+}
+
+/// Links kept together, for reading: "the call · https://b" (the browser
+/// makes "the call" clickable; the terminal shows its address beside it).
 pub fn shown(links: &str) -> String {
-    links.split_whitespace().collect::<Vec<_>>().join(" · ")
+    list(links).join(" · ")
+}
+
+/// Two lots of links as one, in order, without the same address twice.
+pub fn merged(first: &str, then: &str) -> String {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: Vec<String> = Vec::new();
+    for l in list(first).into_iter().chain(list(then)) {
+        let url = match crate::links::pieces(&l).first() {
+            Some(crate::links::Piece::Link { url, .. }) => url.to_string(),
+            _ => l.clone(),
+        };
+        if !seen.contains(&url) {
+            seen.push(url);
+            out.push(l);
+        }
+    }
+    out.join(" ")
+}
+
+/// Up to `max` links out of `text`, and what's left once they're gone.
+fn take_links(text: &str, max: usize) -> (String, Vec<String>) {
+    let mut links: Vec<String> = Vec::new();
+    let mut rest = String::new();
+    for piece in crate::links::pieces(text) {
+        match piece {
+            crate::links::Piece::Link { label, url } => match clean_link(url) {
+                Some(url) if links.len() < max => {
+                    links.push(format!("[{label}]({url})"));
+                    rest.push(' ');
+                }
+                _ => rest.push_str(&format!("[{label}]({url})")),
+            },
+            crate::links::Piece::Text(t) => {
+                for w in t.split_inclusive(char::is_whitespace) {
+                    if links.len() < max
+                        && w.starts_with("https://")
+                        && let Some(l) = clean_link(w)
+                    {
+                        links.push(l);
+                        rest.push(' ');
+                    } else {
+                        rest.push_str(w);
+                    }
+                }
+            }
+        }
+    }
+    (rest.split_whitespace().collect::<Vec<_>>().join(" "), links)
 }
 
 impl Game {
@@ -113,7 +152,7 @@ impl Game {
                         format!(
                             "🔗 {} has {}: ",
                             super::capitalise(&super::the(&name)),
-                            if link.contains(' ') {
+                            if list(link).len() > 1 {
                                 "links"
                             } else {
                                 "a link"
@@ -139,10 +178,14 @@ impl Game {
         let rest = rest.trim();
         let spot = self.meeting_spot_at(x, y);
         if rest.is_empty() {
-            let link = spot
+            // An event on now comes first (its own call), then the table's.
+            let table = spot
                 .as_ref()
-                .and_then(|s| self.meeting_links.get(&s.0).cloned())
-                .or_else(|| self.event_link_now(x, y));
+                .and_then(|s| self.meeting_links.get(&s.0).cloned());
+            let link = match (self.event_link_now(x, y), table) {
+                (Some(e), Some(t)) => Some(merged(&e, &t)),
+                (e, t) => e.or(t),
+            };
             let Some(link) = link else {
                 let msg = if spot.is_some() {
                     "There are no links here yet. Leave some for whatever happens here: meet https://…"
@@ -279,6 +322,44 @@ mod tests {
         assert_eq!(link.unwrap().split(' ').count(), 3, "three at most");
         let (name, link) = split_link("Beach party");
         assert_eq!((name.as_str(), link), ("Beach party", None));
+    }
+
+    #[test]
+    fn links_can_have_words() {
+        let (name, link) = split_link(
+            "Tea party [the call](https://meet.example.com/abc) [snack list](https://example.com/snacks) https://example.com/map",
+        );
+        assert_eq!(name, "Tea party");
+        let link = link.unwrap();
+        assert_eq!(
+            list(&link),
+            [
+                "[the call](https://meet.example.com/abc)",
+                "[snack list](https://example.com/snacks)",
+                "https://example.com/map",
+            ]
+        );
+        assert_eq!(
+            shown(&link),
+            "[the call](https://meet.example.com/abc) · [snack list](https://example.com/snacks) · https://example.com/map"
+        );
+        let (name, link) = split_link("Picnic [the map](http://example.com/map)");
+        assert_eq!(link, None, "still https only");
+        assert_eq!(name, "Picnic [the map](http://example.com/map)");
+        let (name, link) = split_link("Picnic [the map](https://example.com/map) by the pond");
+        assert_eq!(name, "Picnic by the pond");
+        assert_eq!(link.as_deref(), Some("[the map](https://example.com/map)"));
+    }
+
+    #[test]
+    fn an_events_links_then_the_tables() {
+        assert_eq!(
+            merged(
+                "[the call](https://meet.example.com/a) https://example.com/board",
+                "[the board](https://example.com/board) https://example.com/snacks",
+            ),
+            "[the call](https://meet.example.com/a) https://example.com/board https://example.com/snacks"
+        );
     }
 
     #[test]

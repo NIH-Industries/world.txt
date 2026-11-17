@@ -1354,6 +1354,15 @@ impl Db {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// Change an event's links (None clears them).
+    pub fn set_event_link(&self, id: i64, link: Option<&str>) -> anyhow::Result<()> {
+        self.conn.execute(
+            "UPDATE events SET link = ?2 WHERE id = ?1",
+            params![id, link],
+        )?;
+        Ok(())
+    }
+
     /// Make an event repeat on these days, at its time of day in `tz`.
     pub fn set_repeat(&self, id: i64, days: &str, tz: &str) -> anyhow::Result<()> {
         self.conn.execute(

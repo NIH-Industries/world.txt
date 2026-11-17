@@ -712,10 +712,10 @@ async fn serve_page(
         )
     };
     let (status, ctype, body) = match read {
-        Err(_) | Ok(Err(ReadError::Bad)) => text("400 Bad Request", "that didn't make sense, babe"),
+        Err(_) | Ok(Err(ReadError::Bad)) => text("400 Bad Request", "that didn't make sense, friend"),
         Ok(Err(ReadError::TooBig)) => text(
             "413 Payload Too Large",
-            "that's a lot, babe: keep it under 16KB",
+            "that's a lot, friend: keep it under 16KB",
         ),
         Ok(Ok(req)) => match (req.method.as_str(), req.path.as_str(), info) {
             ("POST", p, _) if p.starts_with("/hook/") => {
@@ -750,7 +750,7 @@ async fn serve_page(
                             ),
                             Ok(HookReply::TooFast) => text(
                                 "429 Too Many Requests",
-                                "one at a time, babe: wait a couple of seconds",
+                                "one at a time, friend: wait a couple of seconds",
                             ),
                             Ok(HookReply::Unknown) | Err(_) => {
                                 text("404 Not Found", "no hook here (it may have been stopped)")
@@ -774,7 +774,7 @@ async fn serve_page(
             (_, federation::WELL_KNOWN, Some(info)) => {
                 ("200 OK", "application/json", serde_json::to_vec(info)?)
             }
-            _ => text("404 Not Found", "nothing here, babe"),
+            _ => text("404 Not Found", "nothing here, friend"),
         },
     };
     let head = format!(

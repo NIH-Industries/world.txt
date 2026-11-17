@@ -31,8 +31,8 @@ pub const STEPS: &[Step] = &[
     },
     Step {
         act: Act::Say,
-        hint: "🌼 Say hello: type 'hi",
-        cmd: "'hi",
+        hint: "🌼 Say hello: type \"say hi\" and everyone here will hear you",
+        cmd: "say hi",
         cheer: "💬 Everyone nearby heard you!",
     },
     Step {
