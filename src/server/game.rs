@@ -1200,6 +1200,9 @@ impl Game {
                 if let Some(done) = self.cmd_build(id, &verb, rest) {
                     return done;
                 }
+                if craft::is_recipe(rest) {
+                    return self.cmd_craft(id, rest);
+                }
                 return self.cmd_make(id, rest);
             }
             "craft" => return self.cmd_craft(id, rest),

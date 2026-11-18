@@ -157,6 +157,33 @@ fn all_recipes() -> impl Iterator<Item = &'static Recipe> {
     RECIPES.iter().chain(FURNITURE)
 }
 
+/// Whether `make …` names a recipe exactly ("a feather cushion"), so it can be
+/// crafted rather than made from nothing. Only an exact name: "a cushion that
+/// squeaks" is still a thing of your own.
+pub(super) fn is_recipe(words: &str) -> bool {
+    let lower = words.trim().to_lowercase();
+    let w = crate::server::world::strip_article(&lower);
+    all_recipes()
+        .filter_map(|r| nature::by_id(r.makes))
+        .any(|s| s.name == w || s.id == w.replace(' ', "_"))
+}
+
+/// What a recipe took from the satchel: "a jay feather and 2 × pigeon feather".
+pub(super) fn used_label(used: &[(&str, i64)]) -> String {
+    let parts: Vec<String> = used
+        .iter()
+        .filter_map(|(id, n)| {
+            let name = nature::by_id(id)?.name;
+            Some(if *n == 1 {
+                nature::a(name)
+            } else {
+                format!("{n} × {name}")
+            })
+        })
+        .collect();
+    crate::server::world::join_and(&parts)
+}
+
 pub(super) fn need_label(need: Need, n: i64) -> String {
     let (one, many) = match need {
         Any(k) => match k {
@@ -326,6 +353,7 @@ impl Game {
             Line::new()
                 .c(Col::Yellow, "✂️ You craft ")
                 .b(Col::Yellow, nature::a(s.name))
+                .c(Col::Yellow, format!(" from {}", used_label(&used)))
                 .c(
                     Col::Yellow,
                     "! It's in your satchel: place it, or give it to someone.",
@@ -363,6 +391,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn says_what_a_craft_used() {
+        let (a, b) = (&nature::SPECIES[0], &nature::SPECIES[1]);
+        assert_eq!(
+            used_label(&[(a.id, 1), (b.id, 2)]),
+            format!("{} and 2 × {}", nature::a(a.name), b.name)
+        );
+    }
+
+    #[test]
+    fn make_knows_a_recipe_only_by_its_exact_name() {
+        assert!(is_recipe("a feather cushion"));
+        assert!(is_recipe("Feather Cushion"));
+        assert!(!is_recipe("a feather cushion that squeaks"));
+        assert!(!is_recipe("a cushion"));
+        assert!(!is_recipe("a little blue bench"));
     }
 
     #[test]
