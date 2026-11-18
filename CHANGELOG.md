@@ -12,9 +12,21 @@ than two long addresses. Plain https links still work, up to three in all.
 ### Change an event's links
 `event links 1 [the call](https://…)` changes an event's links without
 cancelling it (its host or a keeper; `event links 1 off` clears them), so
-who's going and how it repeats stay put. And `meet` at a gathering table
-while an event is on now hands over the event's own links first, then the
-table's, so several events at one table can each have their own call.
+who's going and how it repeats stay put. An event at a gathering table now
+carries the table's links after its own, in `events`, the reminder, the
+"starting now" shout and `meet`, so several events at one table can each
+have their own call and share the table's board. The table's links are no
+longer copied onto events, so changing them changes every event there.
+
+### Saying what goes with what
+A noticeboard, a gathering table and events on the same spot work together:
+the board says who (its followers hear about events there), the table says
+what (its links come along), and the event says when. The island now says
+so as it happens: planning an event or changing its links tells you who'll
+be reminded and where its links come from, looking at a table says events
+there bring its links (and remind the board's followers, if there's a board
+too), and putting a table by a board, or a board by a table, says how they
+team up.
 
 ### Friendlier, not flirtier
 The world calls you "friend" now instead of "babe" when it can't make

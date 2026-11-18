@@ -2418,9 +2418,12 @@ impl Game {
                 id,
                 Line::col(
                     Col::Dim,
-                    "Then anyone here can type meet to get them. Events planned here use them too.",
+                    "Then anyone here can type meet to get them. Events here bring them along too, after their own.",
                 ),
             );
+            if matches!(self.board_here(x, y), Some((_, false))) {
+                self.say1(id, Line::col(Col::Dim, "It's beside a noticeboard, so events planned here remind whoever follows the board, with these links."));
+            }
             self.say1(id, Line::col(Col::Dim, "Next: plan something here (event here fri 4pm Tea party), then bring your people: add Poppy, Sam to event 1. (help gatherings)"));
             self.tell_here(
                 x,
@@ -2464,7 +2467,7 @@ impl Game {
                 .things_at(x, y)
                 .any(|t| t.kind.as_deref() == Some(meetings::kind()))
             {
-                self.say1(id, Line::col(Col::Dim, "It's beside a gathering table, so its followers are that table's group. Bring them in: add Poppy, Sam to board"));
+                self.say1(id, Line::col(Col::Dim, "It's beside a gathering table, so its followers are that table's group: events planned here remind them, with the table's links. Bring them in: add Poppy, Sam to board"));
             }
             self.tell_here(
                 x,
@@ -4344,7 +4347,7 @@ const HELP: &[HelpTopic] = &[
             ),
             (
                 "event fri 4pm Tea party https://…",
-                "an event with links (at a gathering table, it uses the table's)",
+                "an event with links (at a gathering table, the table's come along too)",
             ),
             (
                 "event links 1 [the call](https://…)",

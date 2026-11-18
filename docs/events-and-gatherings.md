@@ -4,6 +4,14 @@ Everything for getting your people together: events (for the whole island or
 just one spot), gathering tables with links, and noticeboards that work like
 group chats. In the world, `help gatherings` has the short version.
 
+## How it fits together
+
+Everything belongs to a spot. On one spot, a **noticeboard** says who (its
+followers hear about events there, like a group chat), a **gathering table**
+says what (its links, a call, a list, come along to every event there), and
+an **event** says when. None needs the others, and the island tells you how
+they're teaming up as you go.
+
 ## Events
 
 Keepers plan events where they're standing: `event sat 4pm Beach party` (or
@@ -62,12 +70,12 @@ shows "the call · snack list", each clickable in the browser (the terminal
 shows the address beside it). Anyone standing there sees them when they look,
 and `meet` hands them to you and tells everyone there you've headed off to the
 gathering. Events can carry links too, `event here fri 4pm Tea party https://…`
-(or `[the call](https://…)`, with words),
-and one planned at a gathering table uses the table's. They show in `events`, the
-reminder and the "starting now" shout, and `meet` at an event's spot while it's
-on hands them over, each clickable on its own: the event's own first, then the
-table's (so each event can have its own call, and the table holds what they
-share, like the team's board). In the browser, https links anywhere (lines and board
+(or `[the call](https://…)`, with words), and an event at a gathering table
+carries the table's links too, after its own: each event can have its own
+call while the table holds what they share, like the team's board. Change
+the table's links and every event there has the new ones straight away.
+They show in `events`, the reminder and the "starting now" shout, and `meet`
+at an event's spot while it's on hands them over, each clickable on its own. In the browser, https links anywhere (lines and board
 notes) open in a new tab.
 
 ## Noticeboards

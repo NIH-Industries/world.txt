@@ -161,6 +161,14 @@ impl Game {
                     )
                     .c(Col::Cyan, shown(link))
                     .c(Col::Dim, " (meet to get them)"),
+                Line::col(
+                    Col::Dim,
+                    if matches!(self.board_here(p.x, p.y), Some((_, false))) {
+                        "   Events here bring them along, and remind whoever follows the noticeboard here."
+                    } else {
+                        "   Events here bring them along, after their own."
+                    },
+                ),
             ],
             None => vec![Line::col(
                 Col::Dim,

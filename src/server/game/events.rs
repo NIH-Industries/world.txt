@@ -415,7 +415,8 @@ impl Game {
             return Ok(());
         }
         let (text, link) = super::meetings::split_link(text);
-        let link = link.or_else(|| self.meeting_link_at(x, y));
+        // A gathering table's links aren't copied: they come along live
+        // (event_links), so changing the table changes every event there.
         // Times are the planner's own: 2pm is 2pm where they are.
         let tz = self.my_zone(id);
         let now_there = chrono::Utc::now().with_timezone(&tz);
@@ -474,29 +475,17 @@ impl Game {
             Some(every) => format!("🔁 {every} · next {}", when_label(at, tz)),
             None => when_label(at, tz),
         };
-        let call = link.as_ref().map_or(String::new(), |l| {
+        let shown = self.links_at(link.as_deref(), x, y);
+        let call = shown.as_ref().map_or(String::new(), |l| {
             format!(" · 🔗 {}", super::meetings::shown(l))
         });
         let now = super::boards::now();
         let who = if local {
             self.world.db.set_going(event, &host, true)?;
             // Say who'll actually hear, so the group is easy to picture.
-            match self.board_here(x, y) {
-                Some((board, false)) => {
-                    let n = self
-                        .world
-                        .db
-                        .followers(board)?
-                        .into_iter()
-                        .filter(|u| *u != host)
-                        .count();
-                    match n {
-                        0 => "Nobody follows the board here yet, so for now it's whoever's going and anyone nearby. (add Poppy to board)".to_string(),
-                        1 => "The 1 other person following the board here, whoever's going, and anyone nearby will get a reminder.".to_string(),
-                        n => format!("The {n} people following the board here, whoever's going, and anyone nearby will get a reminder."),
-                    }
-                }
-                _ => {
+            match self.board_story(x, y, &host)? {
+                Some(story) => story,
+                None => {
                     // Its number, for adding people to it.
                     let n = self
                         .world
@@ -526,6 +515,9 @@ impl Game {
                 .b(Col::Yellow, &name)
                 .c(Col::Yellow, format!(" · {when} at {place}{call}. {who}")),
         );
+        if let Some(story) = self.links_story(link.as_deref(), x, y) {
+            self.say1(id, Line::col(Col::Dim, format!("   {story}")));
+        }
         if !invited.is_empty() {
             let names: Vec<String> = invited.iter().map(|u| self.world.nick(u)).collect();
             self.say1(
@@ -607,8 +599,8 @@ impl Game {
     /// they're here, or a note waiting for when they arrive.
     fn send_invites(&mut self, from: &str, e: &EventRow, users: &[String]) -> anyhow::Result<()> {
         let place = self.world.place_title(e.x, e.y);
-        let call = e.link.as_ref().map_or(String::new(), |l| {
-            format!(" · 🔗 {}", super::meetings::shown(l))
+        let call = self.event_links(e).map_or(String::new(), |l| {
+            format!(" · 🔗 {}", super::meetings::shown(&l))
         });
         let fromname = self.world.nick(from);
         let when = |tz: Tz, zoned: bool| {
@@ -845,7 +837,7 @@ impl Game {
                         format!(" (hosted by {})", self.world.nick(&e.host)),
                     ),
             );
-            if let Some(l) = &e.link {
+            if let Some(l) = &self.event_links(e) {
                 if self.in_on(e, &self.insiders(e), &me, mx, my) {
                     lines.push(
                         Line::new()
@@ -969,9 +961,9 @@ impl Game {
                 "📅 You're going to {} ({} at {place}{}). You'll get a reminder wherever you are.",
                 e.name,
                 when_label(e.at, self.my_zone(id)),
-                e.link.as_ref().map_or(String::new(), |l| format!(
+                self.event_links(&e).map_or(String::new(), |l| format!(
                     " · 🔗 {}",
-                    super::meetings::shown(l)
+                    super::meetings::shown(&l)
                 ))
             ),
             (true, false) => format!("📅 You're already going to {}.", e.name),
@@ -1108,15 +1100,71 @@ impl Game {
         }
         let link = if off { None } else { link };
         self.world.db.set_event_link(e.id, link.as_deref())?;
-        let line = match &link {
-            Some(l) => Line::new()
+        let line = match self.links_at(link.as_deref(), e.x, e.y) {
+            Some(all) => Line::new()
                 .c(Col::Cyan, format!("🔗 {} now has ", e.name))
-                .c(Col::Cyan, super::meetings::shown(l))
-                .c(Col::Dim, ". Everyone in on it gets them with the reminders."),
-            None => Line::col(Col::Cyan, format!("🔗 {} has no links of its own now.", e.name)),
+                .c(Col::Cyan, super::meetings::shown(&all))
+                .c(Col::Cyan, "."),
+            None => Line::col(Col::Cyan, format!("🔗 {} has no links now.", e.name)),
         };
         self.say1(id, line);
+        let mut story: Vec<String> = self
+            .links_story(link.as_deref(), e.x, e.y)
+            .into_iter()
+            .collect();
+        if e.local {
+            match self.board_story(e.x, e.y, &e.host)? {
+                Some(s) => story.push(s.replace("will get a reminder", "get them with the reminder")),
+                None => story.push("Whoever's going and anyone nearby get them with the reminder.".into()),
+            }
+        } else {
+            story.push("Everyone gets them with the reminder.".into());
+        }
+        self.say1(id, Line::col(Col::Dim, format!("   {}", story.join(" "))));
         Ok(())
+    }
+
+    /// Who a place event here reaches through the board on its spot, if
+    /// there is one: "The 4 people following the board here, …".
+    fn board_story(&self, x: i64, y: i64, host: &str) -> anyhow::Result<Option<String>> {
+        let Some((board, false)) = self.board_here(x, y) else {
+            return Ok(None);
+        };
+        let n = self
+            .world
+            .db
+            .followers(board)?
+            .into_iter()
+            .filter(|u| u != host)
+            .count();
+        Ok(Some(match n {
+            0 => "Nobody follows the board here yet, so for now it's whoever's going and anyone nearby. (add Poppy to board)".to_string(),
+            1 => "The 1 other person following the board here, whoever's going, and anyone nearby will get a reminder.".to_string(),
+            n => format!("The {n} people following the board here, whoever's going, and anyone nearby will get a reminder."),
+        }))
+    }
+
+    /// Where an event's links come from, when a gathering table here adds
+    /// some: said once, so nobody's surprised by the reminder.
+    fn links_story(&self, own: Option<&str>, x: i64, y: i64) -> Option<String> {
+        self.meeting_link_at(x, y)?;
+        Some(match own {
+            Some(_) => "The gathering table's links here come along after its own, so change those with meet.".into(),
+            None => "Its links are the gathering table's here: change them with meet and this changes too.".into(),
+        })
+    }
+
+    /// An event's links as everyone sees them: its own, then those of the
+    /// gathering table where it happens.
+    pub(super) fn event_links(&self, e: &EventRow) -> Option<String> {
+        self.links_at(e.link.as_deref(), e.x, e.y)
+    }
+
+    fn links_at(&self, own: Option<&str>, x: i64, y: i64) -> Option<String> {
+        match (own, self.meeting_link_at(x, y)) {
+            (Some(o), Some(t)) => Some(super::meetings::merged(o, &t)),
+            (o, t) => o.map(str::to_string).or(t),
+        }
     }
 
     /// The call link of an event happening at (x, y) right now, for `meet`.
@@ -1163,6 +1211,7 @@ impl Game {
             if e.at < now - ROLL_AFTER && e.repeat.is_some() {
                 continue;
             }
+            let links = self.event_links(&e);
             let line = if !e.started && e.at <= now {
                 let _ = self.world.db.mark_event(e.id, true, true);
                 with_call(
@@ -1170,7 +1219,7 @@ impl Game {
                         Col::Yellow,
                         format!("🎉 {} is starting now at {place}!", e.name),
                     ),
-                    &e.link,
+                    &links,
                 )
                 .c(Col::Dim, " (go event to head there)")
             } else if !e.reminded && e.at - now <= REMIND_BEFORE && e.at > now {
@@ -1186,7 +1235,7 @@ impl Game {
                         .c(Col::Yellow, format!("📅 In {mins}: "))
                         .b(Col::Yellow, e.name.clone())
                         .c(Col::Yellow, format!(" at {place}")),
-                    &e.link,
+                    &links,
                 )
                 .c(Col::Dim, " (go event)")
             } else {
