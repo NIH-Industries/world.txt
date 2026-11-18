@@ -177,14 +177,19 @@ pub fn plan_named(words: &str, loose: bool) -> Option<&'static Plan> {
     if w.is_empty() {
         return None;
     }
-    PLANS
-        .iter()
-        .find(|p| p.name == w)
+    // `make` needs the exact name, so "make a mushroom house that glows" is
+    // still a thing of your own; `build` takes a name inside other words, or
+    // a part of one.
+    let exact = PLANS.iter().find(|p| p.name == w);
+    if !loose {
+        return exact;
+    }
+    exact
         .or_else(|| PLANS.iter().find(|p| w.contains(p.name)))
         .or_else(|| {
             PLANS
                 .iter()
-                .find(|p| loose && w.len() >= 4 && p.name.contains(w.as_str()))
+                .find(|p| w.len() >= 4 && p.name.contains(w.as_str()))
         })
 }
 
@@ -656,6 +661,14 @@ mod tests {
         assert!(
             plan_named("a fish", false).is_none(),
             "make a fish is just a fish"
+        );
+        assert!(
+            plan_named("a mushroom house that glows", false).is_none(),
+            "make only builds by the exact name"
+        );
+        assert_eq!(
+            plan_named("a mushroom house that glows", true).map(|p| p.id),
+            Some("mushroom_house")
         );
         assert!(plan_named("a little blue bench", true).is_none());
         assert!(plan_named("a frog that croaks", true).is_none());

@@ -11,6 +11,10 @@ Crafting now says what it took, too: "You craft a feather cushion from a
 jay feather and 2 × pigeon feather!" Building does the same as the
 scaffolding goes up.
 
+`make` builds only by a building's exact name now, too: `make a mushroom
+house` puts one up, but `make a mushroom house that glows` is a glowing
+thing of your own and spends nothing. `build` still finds it either way.
+
 ## 0.13.0 - 2026-11-18
 
 ### Links with words
