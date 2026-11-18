@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-11-18
+
 ### Links with words
 Events and gathering tables take links with words, like noticeboards do:
 `meet [the call](https://…) [the board](https://…)` or
