@@ -12,7 +12,7 @@
 //! full enough.
 
 use super::Game;
-use super::craft::{Need, need_label, plan_needs};
+use super::craft::{Need, need_label, plan_needs, used_label};
 use super::progress::NEAR;
 use crate::protocol::{Bar, Col, Line};
 use crate::server::nature::Kind;
@@ -416,8 +416,9 @@ impl Game {
             Line::new().c(
                 Col::Yellow,
                 format!(
-                    "🏗️ You start building {name} {} here. It'll be ready in {}.",
+                    "🏗️ You start building {name} {} here from {}. It'll be ready in {}.",
                     plan.icon,
+                    used_label(&used),
                     minutes(plan.secs)
                 ),
             ),

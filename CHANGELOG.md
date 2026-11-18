@@ -8,7 +8,8 @@ satchel, just like `craft feather cushion`, rather than making a free
 cushion of your own out of nothing. Add your own words (`make a feather
 cushion that squeaks`) and it's still a thing of your own.
 Crafting now says what it took, too: "You craft a feather cushion from a
-jay feather and 2 × pigeon feather!"
+jay feather and 2 × pigeon feather!" Building does the same as the
+scaffolding goes up.
 
 ## 0.13.0 - 2026-11-18
 
