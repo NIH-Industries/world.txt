@@ -134,8 +134,11 @@ impl Game {
                     .t(name.clone()),
             );
         }
-        if !places.is_empty() {
-            lines.push(Line::col(Col::Dim, "  go to The Greenhouse (part of a name will do) or go 3 walks you there, rowing across if need be"));
+        if let Some((_, _, first, _)) = places.first() {
+            lines.push(Line::col(
+                Col::Dim,
+                format!("  go to {first} (part of a name will do) or go 1 walks you there, rowing across if need be"),
+            ));
         }
         self.send(id, lines);
         Ok(())
@@ -150,7 +153,14 @@ impl Game {
         let want = rest.trim();
         let want = want.strip_prefix("to ").unwrap_or(want).trim();
         if want.is_empty() {
-            self.say1(id, Line::plain("Go where? A direction (n, se…), or a place: go to The Greenhouse ('places' lists them)."));
+            let example = self.world.places().first().map_or_else(
+                || "a place ('places' lists any)".to_string(),
+                |(_, _, n, _)| format!("a place: go to {n} ('places' lists them)"),
+            );
+            self.say1(
+                id,
+                Line::plain(format!("Go where? A direction (n, se…), or {example}.")),
+            );
             return Ok(());
         }
         let places = self.world.places();

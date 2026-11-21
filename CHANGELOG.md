@@ -15,6 +15,9 @@ scaffolding goes up.
 house` puts one up, but `make a mushroom house that glows` is a glowing
 thing of your own and spends nothing. `build` still finds it either way.
 
+`places` ends with an example using a place that's really there (`go to
+The Willow Bank` or `go 1`), rather than a Greenhouse that might not exist.
+
 ## 0.13.0 - 2026-11-18
 
 ### Links with words
