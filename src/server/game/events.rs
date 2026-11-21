@@ -1114,8 +1114,11 @@ impl Game {
             .collect();
         if e.local {
             match self.board_story(e.x, e.y, &e.host)? {
-                Some(s) => story.push(s.replace("will get a reminder", "get them with the reminder")),
-                None => story.push("Whoever's going and anyone nearby get them with the reminder.".into()),
+                Some(s) => {
+                    story.push(s.replace("will get a reminder", "get them with the reminder"))
+                }
+                None => story
+                    .push("Whoever's going and anyone nearby get them with the reminder.".into()),
             }
         } else {
             story.push("Everyone gets them with the reminder.".into());
@@ -1479,14 +1482,16 @@ mod tests {
 
     #[test]
     fn reads_which_event_gets_which_links() {
-        let (which, link, off) = links_words("2 [the call](https://meet.example.com/a) https://example.com/b");
+        let (which, link, off) =
+            links_words("2 [the call](https://meet.example.com/a) https://example.com/b");
         assert_eq!(which, "2");
         assert_eq!(
             link.as_deref(),
             Some("[the call](https://meet.example.com/a) https://example.com/b")
         );
         assert!(!off);
-        let (which, link, _) = links_words("Morning standup [the call](https://meet.example.com/a)");
+        let (which, link, _) =
+            links_words("Morning standup [the call](https://meet.example.com/a)");
         assert_eq!((which.as_str(), link.is_some()), ("Morning standup", true));
         assert_eq!(links_words("1 off"), ("1".into(), None, true));
         assert_eq!(links_words("off"), ("".into(), None, true));

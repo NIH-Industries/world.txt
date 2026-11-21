@@ -712,7 +712,9 @@ async fn serve_page(
         )
     };
     let (status, ctype, body) = match read {
-        Err(_) | Ok(Err(ReadError::Bad)) => text("400 Bad Request", "that didn't make sense, friend"),
+        Err(_) | Ok(Err(ReadError::Bad)) => {
+            text("400 Bad Request", "that didn't make sense, friend")
+        }
         Ok(Err(ReadError::TooBig)) => text(
             "413 Payload Too Large",
             "that's a lot, friend: keep it under 16KB",
