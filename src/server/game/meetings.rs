@@ -4,6 +4,7 @@
 
 use super::Game;
 use crate::protocol::{Col, Line};
+use crate::server::db::EventRow;
 
 const KIND: &str = "meeting";
 const MAX_LINK: usize = 300;
@@ -77,6 +78,88 @@ pub fn merged(first: &str, then: &str) -> String {
     out.join(" ")
 }
 
+/// `put [the call](https://…) on the table` → (its links, "the table"),
+/// read from what comes after `put`. Nothing to put without a link, so
+/// `put shell in the jar` stays a display case's.
+pub fn put_words(rest: &str) -> Option<(String, String)> {
+    let (words, links) = split_link(rest);
+    let links = links?;
+    let padded = format!(" {}", words.to_lowercase());
+    let target = [" onto ", " on ", " at ", " to "]
+        .iter()
+        .filter_map(|p| padded.find(p).map(|at| at + p.len()))
+        .min()
+        .map_or(words.as_str(), |at| &words[at - 1..]);
+    Some((links, target.trim().to_string()))
+}
+
+/// `take the call off the table` → ("the call", "the table").
+pub fn take_words(rest: &str) -> Option<(String, String)> {
+    let lower = rest.to_lowercase();
+    let (at, len) = [" off of ", " off ", " from ", " out of "]
+        .iter()
+        .filter_map(|p| lower.find(p).map(|at| (at, p.len())))
+        .min_by_key(|&(at, len)| (at, std::cmp::Reverse(len)))?;
+    Some((
+        rest[..at].trim().to_string(),
+        rest[at + len..].trim().to_string(),
+    ))
+}
+
+/// A link's words (or its address, if it has none) and its address.
+fn label_url(link: &str) -> (String, String) {
+    match crate::links::pieces(link).first() {
+        Some(crate::links::Piece::Link { label, url }) => (label.to_string(), url.to_string()),
+        _ => (link.to_string(), link.to_string()),
+    }
+}
+
+/// "The Call link" → "call", for matching what someone takes off.
+fn plain(words: &str) -> String {
+    let w = words.trim().to_lowercase();
+    let w = crate::server::world::strip_article(&w).trim();
+    w.strip_suffix(" link").unwrap_or(w).trim().to_string()
+}
+
+/// Take the link called `what` (by its words or its address) out of
+/// `links`: what's left (None when nothing is), and what was taken. `all`,
+/// `links` and the like take everything; a bare `link` takes the only one.
+/// None if no link (or more than one) is called that.
+pub fn without(links: &str, what: &str) -> Option<(Option<String>, Vec<String>)> {
+    let all = list(links);
+    let w = plain(what);
+    let everything = matches!(
+        w.as_str(),
+        "all" | "everything" | "links" | "all links" | "all the links" | "all of them" | "them"
+    ) || (matches!(w.as_str(), "link" | "it" | "") && all.len() == 1);
+    if everything {
+        return (!all.is_empty()).then_some((None, all));
+    }
+    let named = |exact: bool| -> Vec<String> {
+        all.iter()
+            .filter(|l| {
+                let (label, url) = label_url(l);
+                let label = plain(&label);
+                if exact {
+                    label == w || url.eq_ignore_ascii_case(what.trim())
+                } else {
+                    label.contains(&w) || url.to_lowercase().contains(&w)
+                }
+            })
+            .cloned()
+            .collect()
+    };
+    let mut gone = named(true);
+    if gone.is_empty() {
+        gone = named(false);
+    }
+    if gone.len() != 1 {
+        return None;
+    }
+    let left: Vec<String> = all.into_iter().filter(|l| !gone.contains(l)).collect();
+    Some(((!left.is_empty()).then(|| left.join(" ")), gone))
+}
+
 /// Up to `max` links out of `text`, and what's left once they're gone.
 fn take_links(text: &str, max: usize) -> (String, Vec<String>) {
     let mut links: Vec<String> = Vec::new();
@@ -136,7 +219,7 @@ impl Game {
         self.meeting_links.get(&thing).cloned()
     }
 
-    /// For `look`: the call link here, if any.
+    /// For `look`: what's on the table here, and the links events here bring.
     pub(super) fn meeting_lines_here(&self, id: u64) -> Vec<Line> {
         let Some(p) = self.players.get(&id) else {
             return vec![];
@@ -144,159 +227,354 @@ impl Game {
         let Some((thing, name, _)) = self.meeting_spot_at(p.x, p.y) else {
             return vec![];
         };
-        match self.meeting_links.get(&thing) {
+        let the_spot = super::capitalise(&super::the(&name));
+        let mut lines = match self.meeting_links.get(&thing) {
             Some(link) => vec![
                 Line::new()
-                    .c(
-                        Col::Cyan,
-                        format!(
-                            "🔗 {} has {}: ",
-                            super::capitalise(&super::the(&name)),
-                            if list(link).len() > 1 {
-                                "links"
-                            } else {
-                                "a link"
-                            }
-                        ),
-                    )
+                    .c(Col::Cyan, format!("🔗 On {}: ", super::the(&name)))
                     .c(Col::Cyan, shown(link))
-                    .c(Col::Dim, " (meet to get them)"),
-                Line::col(
-                    Col::Dim,
-                    if matches!(self.board_here(p.x, p.y), Some((_, false))) {
-                        "   Events here bring them along, and remind whoever follows the noticeboard here."
-                    } else {
-                        "   Events here bring them along, after their own."
-                    },
-                ),
+                    .c(Col::Dim, " (meet to join in)"),
             ],
             None => vec![Line::col(
                 Col::Dim,
-                "🔗 Nobody's left any links here yet (meet https://…)",
+                format!(
+                    "🔗 {the_spot} is bare. Leave a link for whatever happens here: put [the call](https://…) on the table"
+                ),
             )],
+        };
+        for (event, when, own) in self.own_links_at(id, p.x, p.y) {
+            lines.push(
+                Line::new()
+                    .c(
+                        Col::Cyan,
+                        format!("   📅 {event} ({when}) brings its own too: "),
+                    )
+                    .c(Col::Cyan, shown(&own)),
+            );
+        }
+        if self.meeting_links.contains_key(&thing) {
+            lines.push(Line::col(
+                Col::Dim,
+                if matches!(self.board_here(p.x, p.y), Some((_, false))) {
+                    "   Every event here brings the table's links along, and reminds whoever follows the noticeboard here."
+                } else {
+                    "   Every event here brings the table's links along."
+                },
+            ));
+        }
+        lines
+    }
+
+    /// The gathering table someone means by `words` (`the table`, its
+    /// name, or nothing at all) at their spot, or else the event they name.
+    fn link_target(&self, id: u64, words: &str) -> anyhow::Result<Option<Target>> {
+        let Some(p) = self.players.get(&id) else {
+            return Ok(None);
+        };
+        let w = plain(words);
+        let table_word = matches!(
+            w.as_str(),
+            "" | "table" | "here" | "spot" | "gazebo" | "gathering table" | "gathering spot"
+        );
+        if let Some((thing, name, maker)) = self.meeting_spot_at(p.x, p.y)
+            && (table_word || name.to_lowercase().contains(&w))
+        {
+            return Ok(Some(Target::Table(thing, name, maker)));
+        }
+        if table_word {
+            return Ok(None);
+        }
+        Ok(self.pick_event(words)?.map(Target::Event))
+    }
+
+    /// Whether someone may change the links on a table: whoever made it,
+    /// the home's owner, a keeper, or anyone at all for the island's own.
+    /// Says why not, if not.
+    fn may_set_table(&self, id: u64, name: &str, maker: &str) -> bool {
+        let user = self.user(id);
+        let home_owner = self
+            .players
+            .get(&id)
+            .and_then(|p| self.world.home_at(p.x, p.y))
+            .is_some_and(|h| h.owner == user);
+        // The island's own tables (the one on the village green) are everyone's.
+        let ok = maker == user || home_owner || maker == super::green::BY || self.is_keeper(&user);
+        if !ok {
+            self.say1(
+                id,
+                Line::plain(format!(
+                    "That's {}'s {}, so only they (or a keeper) can change what's on it. You can still meet to join in!",
+                    self.world.nick(maker),
+                    super::the(name).trim_start_matches("the ")
+                )),
+            );
+        }
+        ok
+    }
+
+    /// Keep these links on a table (None: nothing on it).
+    fn store_table_links(
+        &mut self,
+        id: u64,
+        thing: i64,
+        link: Option<String>,
+    ) -> anyhow::Result<()> {
+        let user = self.user(id);
+        self.world
+            .db
+            .set_meeting_link(thing, link.as_deref(), &user, super::boards::now())?;
+        match link {
+            Some(l) => self.meeting_links.insert(thing, l),
+            None => self.meeting_links.remove(&thing),
+        };
+        Ok(())
+    }
+
+    /// `put [the call](https://…) on the table` (or `on Tea party`): add
+    /// links to a gathering table or an event, three at most.
+    pub(super) fn cmd_put_links(&mut self, id: u64, links: &str, onto: &str) -> anyhow::Result<()> {
+        let Some(target) = self.link_target(id, onto)? else {
+            let msg = if plain(onto).is_empty() || plain(onto) == "table" {
+                "Links go on a gathering table (make a gathering table), or on an event: put https://… on Tea party".to_string()
+            } else {
+                format!(
+                    "There's no table here or event called {onto} to put them on. ('events' lists what's planned, by name)"
+                )
+            };
+            self.say1(id, Line::plain(msg));
+            return Ok(());
+        };
+        let (what, had) = match &target {
+            Target::Table(thing, name, _) => {
+                (super::the(name), self.meeting_links.get(thing).cloned())
+            }
+            Target::Event(e) => (e.name.clone(), e.link.clone()),
+        };
+        let all = had
+            .as_deref()
+            .map_or(links.to_string(), |h| merged(h, links));
+        if list(&all).len() > MAX_LINKS {
+            let first = had
+                .as_deref()
+                .map(list)
+                .and_then(|l| l.into_iter().next())
+                .map(|l| label_url(&l).0)
+                .unwrap_or_default();
+            self.say1(id, Line::plain(format!(
+                "{} can only hold three links, and it's got {} already. Take one off first: take {first} off {}",
+                super::capitalise(&what),
+                shown(had.as_deref().unwrap_or_default()),
+                if matches!(target, Target::Table(..)) { "the table".to_string() } else { what.clone() },
+            )));
+            return Ok(());
+        }
+        match target {
+            Target::Table(thing, name, maker) => {
+                if !self.may_set_table(id, &name, &maker) {
+                    return Ok(());
+                }
+                self.store_table_links(id, thing, Some(all.clone()))?;
+                self.say_table_now(id, &name, Some(&all));
+                let (x, y, who) = self.here(id).unwrap_or_default();
+                let user = self.user(id);
+                self.tell_here_from(
+                    x,
+                    y,
+                    id,
+                    &user,
+                    Line::col(
+                        Col::Cyan,
+                        format!(
+                            "🔗 {who} leaves a link on {}. (meet to join in)",
+                            super::the(&name)
+                        ),
+                    ),
+                );
+            }
+            Target::Event(e) => {
+                if self.may_change_event_links(id, &e) {
+                    self.store_event_links(id, &e, Some(all))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `take the call off the table` (or `off Tea party`; `take all off`
+    /// takes everything). None when it isn't about links after all, like
+    /// `take shell out of the jar` or `remove Poppy from Tea party`.
+    pub(super) fn cmd_take_links(
+        &mut self,
+        id: u64,
+        what: &str,
+        from: &str,
+        table_only: bool,
+    ) -> Option<anyhow::Result<()>> {
+        let target = match self.link_target(id, from) {
+            Ok(t) => t?,
+            Err(e) => return Some(Err(e)),
+        };
+        match target {
+            Target::Table(thing, name, maker) => {
+                let the_spot = super::capitalise(&super::the(&name));
+                let Some(links) = self.meeting_links.get(&thing).cloned() else {
+                    self.say1(
+                        id,
+                        Line::plain(format!(
+                            "{the_spot} is already bare: there are no links on it."
+                        )),
+                    );
+                    return Some(Ok(()));
+                };
+                let Some((left, gone)) = without(&links, what) else {
+                    self.say1(
+                        id,
+                        Line::plain(format!(
+                            "{the_spot} has no link called {what}. On it: {}",
+                            shown(&links)
+                        )),
+                    );
+                    return Some(Ok(()));
+                };
+                if !self.may_set_table(id, &name, &maker) {
+                    return Some(Ok(()));
+                }
+                if let Err(e) = self.store_table_links(id, thing, left.clone()) {
+                    return Some(Err(e));
+                }
+                self.say1(
+                    id,
+                    Line::col(
+                        Col::Cyan,
+                        format!(
+                            "🔗 You take {} off {}.",
+                            shown(&gone.join(" ")),
+                            super::the(&name)
+                        ),
+                    ),
+                );
+                self.say_table_now(id, &name, left.as_deref());
+                Some(Ok(()))
+            }
+            Target::Event(_) if table_only => None,
+            Target::Event(e) => {
+                let own = e.link.as_deref().and_then(|l| without(l, what));
+                let Some((left, gone)) = own else {
+                    // It might be the table's, coming along with the event.
+                    let table = self.meeting_link_at(e.x, e.y)?;
+                    without(&table, what)?;
+                    self.say1(id, Line::plain(format!("That link comes from the gathering table where {} happens. Take it off the table there and it's gone from every event there.", e.name)));
+                    return Some(Ok(()));
+                };
+                if !self.may_change_event_links(id, &e) {
+                    return Some(Ok(()));
+                }
+                self.say1(
+                    id,
+                    Line::col(
+                        Col::Cyan,
+                        format!("🔗 You take {} off {}.", shown(&gone.join(" ")), e.name),
+                    ),
+                );
+                Some(self.store_event_links(id, &e, left))
+            }
         }
     }
 
-    /// `meet` (go into the call here), `meet https://…` (set the spot's
-    /// link) and `meet off` (clear it).
+    /// What's on a table now, after a change.
+    fn say_table_now(&self, id: u64, name: &str, link: Option<&str>) {
+        let the_spot = super::capitalise(&super::the(name));
+        let line = match link {
+            Some(l) => Line::new()
+                .c(Col::Cyan, format!("🔗 On {} now: ", super::the(name)))
+                .c(Col::Cyan, shown(l))
+                .c(
+                    Col::Dim,
+                    ". Anyone here can meet to join in, and every event here brings them along.",
+                ),
+            None => Line::col(Col::Cyan, format!("🔗 {the_spot} is bare now.")),
+        };
+        self.say1(id, line);
+    }
+
+    /// `meet`: join in with whatever's on here (an event's own links first,
+    /// then the table's). `meet https://…` and `meet off` still work as the
+    /// old way of putting links on the table and clearing it.
     pub(super) fn cmd_meet(&mut self, id: u64, rest: &str) -> anyhow::Result<()> {
         let Some((x, y, name)) = self.here(id) else {
             return Ok(());
         };
         let rest = rest.trim();
-        let spot = self.meeting_spot_at(x, y);
-        if rest.is_empty() {
-            // An event on now comes first (its own call), then the table's.
-            let table = spot
-                .as_ref()
-                .and_then(|s| self.meeting_links.get(&s.0).cloned());
-            let link = match (self.event_link_now(x, y), table) {
-                (Some(e), Some(t)) => Some(merged(&e, &t)),
-                (e, t) => e.or(t),
-            };
-            let Some(link) = link else {
-                let msg = if spot.is_some() {
-                    "There are no links here yet. Leave some for whatever happens here: meet https://…"
-                } else {
-                    "There's nothing to join here. Gatherings happen at a gathering table: make a gathering table, then meet https://…"
-                };
-                self.say1(id, Line::plain(msg));
-                return Ok(());
-            };
-            self.say1(
-                id,
-                Line::new()
-                    .c(Col::Cyan, "🔗 Here you go: ")
-                    .b(Col::Cyan, shown(&link))
-                    .c(
-                        Col::Dim,
-                        " (the island will be right here when you're back)",
-                    ),
-            );
-            let user = self.user(id);
-            self.tell_here_from(
-                x,
-                y,
-                id,
-                &user,
-                Line::col(Col::Cyan, format!("🔗 {name} heads off to the gathering.")),
-            );
-            return Ok(());
-        }
-        let Some((thing, spot_name, maker)) = spot else {
-            self.say1(
-                id,
-                Line::plain(
-                    "Links live on gathering spots. Make one here first: make a gathering table",
-                ),
-            );
-            return Ok(());
-        };
-        let user = self.user(id);
-        let home_owner = self.world.home_at(x, y).is_some_and(|h| h.owner == user);
-        // The island's own tables (the one on the village green) are everyone's.
-        let everyones = maker == super::green::BY;
-        if maker != user && !home_owner && !everyones && !self.is_keeper(&user) {
-            self.say1(
-                id,
-                Line::plain(format!(
-                    "Only whoever made {} (or a keeper) can change its links.",
-                    super::the(&spot_name)
-                )),
-            );
-            return Ok(());
-        }
-        let the_spot = super::the(&spot_name);
         if matches!(
             rest.to_lowercase().as_str(),
             "off" | "clear" | "none" | "stop"
         ) {
-            self.world
-                .db
-                .set_meeting_link(thing, None, &user, super::boards::now())?;
-            self.meeting_links.remove(&thing);
-            self.say1(
-                id,
-                Line::col(
-                    Col::Cyan,
-                    format!("🔗 {} has no links now.", super::capitalise(&the_spot)),
-                ),
-            );
-            return Ok(());
+            return self.cmd_take_links(id, "all", "", true).unwrap_or_else(|| {
+                self.say1(id, Line::plain("There's no gathering table here to clear."));
+                Ok(())
+            });
         }
-        let (_, Some(link)) = split_link(rest) else {
-            self.say1(
-                id,
-                Line::plain("That doesn't look like a link. Links need to start https://"),
-            );
+        if !rest.is_empty() {
+            let (_, Some(link)) = split_link(rest) else {
+                self.say1(
+                    id,
+                    Line::plain("That doesn't look like a link. Links start https://, like put https://… on the table"),
+                );
+                return Ok(());
+            };
+            // The old way replaced everything on the table.
+            if let Some((thing, spot_name, maker)) = self.meeting_spot_at(x, y) {
+                if !self.may_set_table(id, &spot_name, &maker) {
+                    return Ok(());
+                }
+                self.store_table_links(id, thing, None)?;
+            }
+            return self.cmd_put_links(id, &link, "");
+        }
+        let spot = self.meeting_spot_at(x, y);
+        // An event on now comes first (its own call), then the table's.
+        let table = spot
+            .as_ref()
+            .and_then(|s| self.meeting_links.get(&s.0).cloned());
+        let link = match (self.event_link_now(x, y), table) {
+            (Some(e), Some(t)) => Some(merged(&e, &t)),
+            (e, t) => e.or(t),
+        };
+        let Some(link) = link else {
+            let msg = if spot.is_some() {
+                "There's nothing on the table to join yet. Leave a link for whatever happens here: put [the call](https://…) on the table"
+            } else {
+                "There's nothing to join here. Gatherings happen at a gathering table: make a gathering table, then put [the call](https://…) on the table"
+            };
+            self.say1(id, Line::plain(msg));
             return Ok(());
         };
-        self.world
-            .db
-            .set_meeting_link(thing, Some(&link), &user, super::boards::now())?;
-        self.meeting_links.insert(thing, link.clone());
         self.say1(
             id,
             Line::new()
+                .c(Col::Cyan, "🔗 Here you go: ")
+                .b(Col::Cyan, shown(&link))
                 .c(
-                    Col::Cyan,
-                    format!("🔗 {} now holds ", super::capitalise(&the_spot)),
-                )
-                .c(Col::Cyan, shown(&link))
-                .c(Col::Dim, ". Anyone here can type meet to get them."),
+                    Col::Dim,
+                    " (the island will be right here when you're back)",
+                ),
         );
+        let user = self.user(id);
         self.tell_here_from(
             x,
             y,
             id,
             &user,
-            Line::col(
-                Col::Cyan,
-                format!("🔗 {name} leaves some links at {the_spot}. (meet to get them)"),
-            ),
+            Line::col(Col::Cyan, format!("🔗 {name} heads off to the gathering.")),
         );
         Ok(())
     }
+}
+
+/// Where links go: a gathering table (its id, name and maker), or an event.
+enum Target {
+    Table(i64, String, String),
+    Event(EventRow),
 }
 
 #[cfg(test)]
@@ -367,6 +645,90 @@ mod tests {
                 "[the board](https://example.com/board) https://example.com/snacks",
             ),
             "[the call](https://meet.example.com/a) https://example.com/board https://example.com/snacks"
+        );
+    }
+
+    #[test]
+    fn reads_what_goes_on_what() {
+        assert_eq!(
+            put_words("[the call](https://meet.example.com/a) on the table"),
+            Some((
+                "[the call](https://meet.example.com/a)".into(),
+                "the table".into()
+            ))
+        );
+        assert_eq!(
+            put_words("https://a.example.com/x https://b.example.com/y onto Tea party"),
+            Some((
+                "https://a.example.com/x https://b.example.com/y".into(),
+                "Tea party".into()
+            ))
+        );
+        assert_eq!(
+            put_words("https://a.example.com/x"),
+            Some(("https://a.example.com/x".into(), "".into())),
+            "on the table here"
+        );
+        assert_eq!(
+            put_words("[the zoom](https://z.example.com/1) on Fish on Fridays"),
+            Some((
+                "[the zoom](https://z.example.com/1)".into(),
+                "Fish on Fridays".into()
+            )),
+            "the first 'on' after the link"
+        );
+        assert_eq!(put_words("shell in the jar"), None, "no link, a case's");
+        assert_eq!(put_words("on my hat"), None);
+    }
+
+    #[test]
+    fn reads_what_comes_off_what() {
+        assert_eq!(
+            take_words("the call off the table"),
+            Some(("the call".into(), "the table".into()))
+        );
+        assert_eq!(
+            take_words("snack list off of Tea party"),
+            Some(("snack list".into(), "Tea party".into()))
+        );
+        assert_eq!(
+            take_words("shell out of the jar"),
+            Some(("shell".into(), "the jar".into()))
+        );
+        assert_eq!(take_words("the call"), None);
+    }
+
+    #[test]
+    fn takes_one_link_off_by_its_words_or_address() {
+        let links = "[the call](https://meet.example.com/a) [snack list](https://example.com/snacks) https://example.com/map";
+        let (left, gone) = without(links, "the call").unwrap();
+        assert_eq!(gone, ["[the call](https://meet.example.com/a)"]);
+        assert_eq!(
+            left.as_deref(),
+            Some("[snack list](https://example.com/snacks) https://example.com/map")
+        );
+        assert_eq!(
+            without(links, "Snack List link").unwrap().1,
+            ["[snack list](https://example.com/snacks)"]
+        );
+        assert_eq!(
+            without(links, "https://example.com/map").unwrap().1,
+            ["https://example.com/map"]
+        );
+        assert_eq!(
+            without(links, "snack").unwrap().1.len(),
+            1,
+            "a bit of its words is enough"
+        );
+        assert!(without(links, "example").is_none(), "that's more than one");
+        assert!(without(links, "Poppy").is_none());
+        assert!(without(links, "link").is_none(), "which one?");
+        assert_eq!(without(links, "all"), Some((None, list(links))));
+        assert_eq!(without(links, "the links").unwrap().0, None);
+        assert_eq!(
+            without("https://example.com/map", "link"),
+            Some((None, vec!["https://example.com/map".to_string()])),
+            "the only one"
         );
     }
 

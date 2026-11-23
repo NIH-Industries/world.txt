@@ -120,6 +120,8 @@ pub fn feature(input: &str) -> Option<&'static str> {
         }
         "befriend" | "feed" | "tame" | "pet" | "pat" | "stroke" | "petname" => "companions",
         "paint" | "repaint" | "colour" | "color" => "paint",
+        "put" | "pin" | "stick" if has("https://") => "gatherings",
+        "take" | "unpin" if has(" off ") => "gatherings",
         "put" | "place" | "display" | "keep"
             if has(" in ") || has(" into ") || has(" on ") && !rest.starts_with("on ") =>
         {

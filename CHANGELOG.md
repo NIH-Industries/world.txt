@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Put links on things
+Links are things you put on a gathering table now, like finds in a case:
+`put [the call](https://…) on the table` adds one, `take the call off the
+table` takes just that one back off (by its words or its address), and
+`clear the table` takes them all. Events work the same way, by name: `put
+[the zoom](https://…) on Tea party`, `take the zoom off Tea party`. `meet`
+only joins in now, and looking at a table shows what's on it and which
+events there bring links of their own. `meet https://…`, `meet off` and
+`event links 1 …` still work, for anyone used to them.
+
+### Call events by name
+`add Poppy, Sam to Tea party` and `remove Poppy from Tea party` work without
+looking up its number first, like `going Tea party` and `cancel Tea party`
+already did. Numbers from `events` still work too.
+
+### Help for gatherings
+`help gatherings` explains how it all fits: a noticeboard is who, a table is
+what, and an event is when. It also says events can have links of their
+own, and its example place is The Frog Pond rather than a Gazebo you'd then
+make a gazebo in.
+
 ### Make what's in the recipes
 `make a feather cushion` (or any name from `recipes`) now crafts it from your
 satchel, just like `craft feather cushion`, rather than making a free

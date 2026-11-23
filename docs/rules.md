@@ -45,8 +45,8 @@ the next section).
 
 | What | Who |
 |---|---|
-| `meet` (get the links) | Anyone standing there. |
-| `meet https://…` / `meet off` on your own table | Whoever made it, the owner of the home it stands in (outdoors only, not guests), or a keeper. |
+| `meet` (join in with what's on the table) | Anyone standing there. |
+| `put … on the table`, `take … off the table`, `clear the table` | Whoever made it, the owner of the home it stands in (outdoors only, not guests), or a keeper. (`meet https://…` and `meet off` still work too.) |
 | The long table on the Village Green | Anyone. It was made by "the island", so it's everyone's. |
 
 ### Noticeboards
@@ -68,10 +68,11 @@ the next section).
 | Plan an event for the whole island (`event sat 4pm Beach party`) | Keepers only. |
 | Plan an event for one place (`event here fri 4pm Tea party`) | Anyone, anywhere. Its planner is its host and is going. |
 | Sign people up when planning (`… with Poppy, Sam and Lu`) | Whoever plans a place event. If some of the names are people and some aren't, nothing is planned. If none are, the words just stay part of the event's name. |
-| `add Poppy to event 2` | Place events only: the host, anyone already going, or a keeper. |
-| `remove Poppy from event 2` | The host or a keeper. The host can't be removed. |
+| `add Poppy to Tea party` (or `to event 2`) | Place events only: the host, anyone already going, or a keeper. |
+| `remove Poppy from Tea party` | The host or a keeper. The host can't be removed. |
+| `put … on Tea party` / `take … off Tea party` (an event's own links) | The host or a keeper. A link that comes from the table there is changed at the table. |
 | `going 2` / `not going 2` / `leave event 2` | Anyone, for themselves, on place events. On a repeating event, `not going` skips just the next one; `leave event` drops out of all of them. The host can't leave their own event. |
-| `cancel event 2` | The host or a keeper. On a repeating event this stops the whole series. Events are picked by their number in `events`, by a name only one event has, or (with nothing given) the only event there is; anything else picks none. |
+| `cancel event 2` | The host or a keeper. On a repeating event this stops the whole series. Events are picked by a name only one event has, by their number in `events`, or (with nothing given) the only event there is; anything else picks none. |
 | Who hears about it | Island-wide: everyone who's on. A place event: its host, whoever's going, followers of a noticeboard on that very spot, and anyone within 10 steps of it on the same island. Skipping the next one means you only hear if you're nearby. |
 | Who sees its links | The same people. Others see that it has links, but not what they are. A place event's links are never written on the noticeboard. |
 

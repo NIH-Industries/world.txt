@@ -242,6 +242,25 @@ pub fn names_and_event<'a>(rest: &'a str, word: &str) -> Option<(&'a str, &'a st
     Some((rest[..at].trim(), rest[at + marker.len()..].trim()))
 }
 
+/// "Poppy, Sam to Tea party" → ("Poppy, Sam", "Tea party"): anything after
+/// the last "to" (or "from"), for the caller to check is really an event.
+/// Never a noticeboard: `add Poppy to board` is the board's.
+pub fn names_and_named<'a>(rest: &'a str, word: &str) -> Option<(&'a str, &'a str)> {
+    if let Some(found) = names_and_event(rest, word) {
+        return Some(found);
+    }
+    let lower = rest.to_lowercase();
+    let marker = format!(" {word} ");
+    let at = lower.rfind(&marker)?;
+    let (who, which) = (rest[..at].trim(), rest[at + marker.len()..].trim());
+    let w = crate::server::world::strip_article(&which.to_lowercase()).to_string();
+    let board = matches!(
+        w.as_str(),
+        "board" | "noticeboard" | "this board" | "my board"
+    );
+    (!who.is_empty() && !which.is_empty() && !board).then_some((who, which))
+}
+
 /// How a repeating event's next time reads: "🔁 weekdays · next Fri 6 Nov, 9:20am".
 fn repeat_when(e: &EventRow, tz: Tz) -> Option<String> {
     let code = e.repeat.as_deref()?;
@@ -305,13 +324,15 @@ pub fn invited(
 
 /// Which of `events` someone means by `which` (see `Game::pick_event`).
 fn pick(events: Vec<EventRow>, which: &str) -> Option<EventRow> {
-    let w = which
-        .trim()
-        .trim_start_matches("to")
-        .trim()
-        .trim_start_matches("event")
-        .trim()
-        .to_lowercase();
+    let mut w = which.trim().to_lowercase();
+    for word in ["to ", "the ", "event "] {
+        if let Some(rest) = w.strip_prefix(word) {
+            w = rest.trim().to_string();
+        }
+    }
+    if w == "event" || w == "to" {
+        w.clear();
+    }
     if w.is_empty() {
         return if events.len() == 1 {
             events.into_iter().next()
@@ -486,21 +507,30 @@ impl Game {
             match self.board_story(x, y, &host)? {
                 Some(story) => story,
                 None => {
-                    // Its number, for adding people to it.
-                    let n = self
-                        .world
-                        .db
-                        .upcoming_events(super::boards::now() - KEEP_AFTER)?
-                        .iter()
-                        .position(|e| e.id == event)
-                        .map_or(1, |i| i + 1);
+                    // Its name, for adding people to it (or its number,
+                    // when another event shares the name).
+                    let all = || {
+                        self.world
+                            .db
+                            .upcoming_events(super::boards::now() - KEEP_AFTER)
+                    };
+                    let n = match pick(all()?, &name) {
+                        Some(e) if e.id == event => name.to_string(),
+                        _ => format!(
+                            "event {}",
+                            all()?
+                                .iter()
+                                .position(|e| e.id == event)
+                                .map_or(1, |i| i + 1)
+                        ),
+                    };
                     if invited.is_empty() {
                         format!(
-                            "Bring your people and they'll hear about it from anywhere: add Poppy, Sam to event {n}"
+                            "Bring your people and they'll hear about it from anywhere: add Poppy, Sam to {n}"
                         )
                     } else {
                         format!(
-                            "Whoever's going and anyone nearby will get a reminder. (add more: add Poppy to event {n})"
+                            "Whoever's going and anyone nearby will get a reminder. (add more: add Poppy to {n})"
                         )
                     }
                 }
@@ -650,7 +680,7 @@ impl Game {
         which: &str,
     ) -> anyhow::Result<()> {
         let Some(e) = self.pick_event(which)? else {
-            self.say1(id, Line::plain("Add them to which event? 'events' lists them, then e.g. 'add Poppy, Sam to event 2'."));
+            self.say1(id, Line::plain("Add them to which event? Name it, like add Poppy, Sam to Tea party ('events' lists them)."));
             return Ok(());
         };
         if !e.local {
@@ -740,7 +770,7 @@ impl Game {
         which: &str,
     ) -> anyhow::Result<()> {
         let Some(e) = self.pick_event(which)? else {
-            self.say1(id, Line::plain("Remove them from which event? 'events' lists them, then e.g. 'remove Poppy from event 2'."));
+            self.say1(id, Line::plain("Remove them from which event? Name it, like remove Poppy from Tea party ('events' lists them)."));
             return Ok(());
         };
         let me = self.user(id);
@@ -896,7 +926,13 @@ impl Game {
             }
         }
         if !events.is_empty() {
-            lines.push(Line::col(Col::Dim, "  go event 2 walks you there · going 2 / not going 2 for 📍 events just for one place"));
+            let name = events
+                .iter()
+                .find(|e| e.local)
+                .unwrap_or(&events[0])
+                .name
+                .clone();
+            lines.push(Line::col(Col::Dim, format!("  Call them by name or number: going {name} · add Poppy to {name} · go event 1 walks you there")));
         }
         self.send(id, lines);
         Ok(())
@@ -905,7 +941,7 @@ impl Game {
     /// The event someone means: its number from `events` ("2", "event 2"),
     /// a name only one event has ("Tea party"), or, when there's only one
     /// event, nothing at all. Anything else is no event, never a guess.
-    fn pick_event(&self, which: &str) -> anyhow::Result<Option<EventRow>> {
+    pub(super) fn pick_event(&self, which: &str) -> anyhow::Result<Option<EventRow>> {
         let events = self
             .world
             .db
@@ -1076,35 +1112,59 @@ impl Game {
     }
 
     /// `event links 1 [the call](https://…) https://…` swaps an event's links
-    /// for these, and `event links 1 off` clears them. Its host or a keeper.
+    /// for these, and `event links 1 off` clears them: the old way, from
+    /// before `put … on Tea party` and `take … off Tea party`.
     pub(super) fn cmd_event_links(&mut self, id: u64, text: &str) -> anyhow::Result<()> {
         let (which, link, off) = links_words(text);
         if link.is_none() && !off {
-            self.say1(id, Line::plain("Which links? e.g. 'event links 1 [the call](https://…) [the board](https://…)', or 'event links 1 off' to clear them."));
+            self.say1(id, Line::plain("Which links? e.g. put [the call](https://…) on Tea party, or take the call off Tea party."));
             return Ok(());
         }
         let Some(e) = self.pick_event(&which)? else {
             self.say1(
                 id,
-                Line::plain("Which event? 'events' lists them, then e.g. 'event links 2 [the call](https://…)'."),
+                Line::plain("Which event? Name it, like put [the call](https://…) on Tea party ('events' lists them)."),
             );
             return Ok(());
         };
-        let me = self.user(id);
-        if e.host != me && !self.is_keeper(&me) {
-            self.say1(
-                id,
-                Line::plain("Only its host or a keeper can change its links."),
-            );
+        if !self.may_change_event_links(id, &e) {
             return Ok(());
         }
-        let link = if off { None } else { link };
+        self.store_event_links(id, &e, if off { None } else { link })
+    }
+
+    /// Whether someone may change an event's links (its host or a keeper),
+    /// saying why not if not.
+    pub(super) fn may_change_event_links(&self, id: u64, e: &EventRow) -> bool {
+        let me = self.user(id);
+        let ok = e.host == me || self.is_keeper(&me);
+        if !ok {
+            self.say1(
+                id,
+                Line::plain(format!(
+                    "{} is {}'s, so only they (or a keeper) can change its links.",
+                    e.name,
+                    self.world.nick(&e.host)
+                )),
+            );
+        }
+        ok
+    }
+
+    /// Keep these as an event's own links, and say what it brings now and
+    /// who'll get them.
+    pub(super) fn store_event_links(
+        &mut self,
+        id: u64,
+        e: &EventRow,
+        link: Option<String>,
+    ) -> anyhow::Result<()> {
         self.world.db.set_event_link(e.id, link.as_deref())?;
         let line = match self.links_at(link.as_deref(), e.x, e.y) {
             Some(all) => Line::new()
-                .c(Col::Cyan, format!("🔗 {} now has ", e.name))
+                .c(Col::Cyan, format!("🔗 {} brings ", e.name))
                 .c(Col::Cyan, super::meetings::shown(&all))
-                .c(Col::Cyan, "."),
+                .c(Col::Cyan, " now."),
             None => Line::col(Col::Cyan, format!("🔗 {} has no links now.", e.name)),
         };
         self.say1(id, line);
@@ -1125,6 +1185,28 @@ impl Game {
         }
         self.say1(id, Line::col(Col::Dim, format!("   {}", story.join(" "))));
         Ok(())
+    }
+
+    /// Events coming up at (x, y) with links of their own, for someone
+    /// looking at the table there: (name, when in their time, links).
+    pub(super) fn own_links_at(&self, id: u64, x: i64, y: i64) -> Vec<(String, String, String)> {
+        let tz = self.my_zone(id);
+        let now = super::boards::now();
+        self.world
+            .db
+            .upcoming_events(now - KEEP_AFTER)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| (e.x, e.y) == (x, y))
+            .filter_map(|e| {
+                let when = if e.at <= now {
+                    "on now".to_string()
+                } else {
+                    repeat_when(&e, tz).unwrap_or_else(|| when_label(e.at, tz))
+                };
+                Some((e.name, when, e.link?))
+            })
+            .collect()
     }
 
     /// Who a place event here reaches through the board on its spot, if
@@ -1152,8 +1234,10 @@ impl Game {
     fn links_story(&self, own: Option<&str>, x: i64, y: i64) -> Option<String> {
         self.meeting_link_at(x, y)?;
         Some(match own {
-            Some(_) => "The gathering table's links here come along after its own, so change those with meet.".into(),
-            None => "Its links are the gathering table's here: change them with meet and this changes too.".into(),
+            Some(_) => {
+                "Whatever's on the gathering table here comes along too, after its own.".into()
+            }
+            None => "Whatever's on the gathering table here comes along too.".into(),
         })
     }
 
@@ -1478,6 +1562,33 @@ mod tests {
             split_names("Poppy, Sam and @Lu & Jo"),
             vec!["Poppy", "Sam", "Lu", "Jo"]
         );
+    }
+
+    #[test]
+    fn reads_who_to_add_to_an_event_by_name() {
+        assert_eq!(
+            names_and_named("Poppy, Sam to Tea party", "to"),
+            Some(("Poppy, Sam", "Tea party"))
+        );
+        assert_eq!(
+            names_and_named("Poppy from the Frog choir", "from"),
+            Some(("Poppy", "the Frog choir"))
+        );
+        assert_eq!(
+            names_and_named("Poppy to event 2", "to"),
+            Some(("Poppy", "2"))
+        );
+        assert_eq!(names_and_named("Poppy to board", "to"), None);
+        assert_eq!(names_and_named("Poppy to the noticeboard", "to"), None);
+        assert_eq!(names_and_named("songs", "to"), None);
+        let all = || vec![ev(1, "Tomato soup"), ev(2, "Event horizon talk")];
+        assert_eq!(
+            pick(all(), "tomato soup").map(|e| e.id),
+            Some(1),
+            "to isn't stripped off tomato"
+        );
+        assert_eq!(pick(all(), "to the tomato soup").map(|e| e.id), Some(1));
+        assert_eq!(pick(all(), "event horizon").map(|e| e.id), Some(2));
     }
 
     #[test]

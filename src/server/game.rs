@@ -946,6 +946,9 @@ impl Game {
         if self.indoors_says_no(id, &verb, rest) {
             return Ok(());
         }
+        if let Some(done) = self.links_command(id, &verb, rest) {
+            return done;
+        }
         if let Some(done) = self.cases_command(id, &verb, rest) {
             return done;
         }
@@ -1061,13 +1064,13 @@ impl Game {
             }
             "eat" | "drink" | "sip" | "nibble" => return self.cmd_eat(id, rest),
             "serve" => return self.cmd_serve(id, rest),
-            "add" | "invite" if events::names_and_event(rest, "to").is_some() => {
-                let (who, which) = events::names_and_event(rest, "to").unwrap_or_default();
-                return self.cmd_add_to_event(id, who, which);
+            "add" | "invite" if let Some((who, which)) = self.people_and_event(rest, "to") => {
+                return self.cmd_add_to_event(id, &who, &which);
             }
-            "remove" | "uninvite" if events::names_and_event(rest, "from").is_some() => {
-                let (who, which) = events::names_and_event(rest, "from").unwrap_or_default();
-                return self.cmd_remove_from_event(id, who, which);
+            "remove" | "uninvite"
+                if let Some((who, which)) = self.people_and_event(rest, "from") =>
+            {
+                return self.cmd_remove_from_event(id, &who, &which);
             }
             "add" if self.adding_to_board(id, rest) => return self.cmd_add_to_board(id, rest),
             "add" | "queue" if self.has_jukebox_here(id) => return self.cmd_add_songs(id),
@@ -1952,6 +1955,37 @@ impl Game {
 
     // ---- shaping the land --------------------------------------------
 
+    /// `Poppy, Sam to Tea party` (or `to event 2`): who, and which event,
+    /// when there really is an event by that name.
+    fn people_and_event(&self, rest: &str, word: &str) -> Option<(String, String)> {
+        if let Some((who, which)) = events::names_and_event(rest, word) {
+            return Some((who.to_string(), which.to_string()));
+        }
+        let (who, which) = events::names_and_named(rest, word)?;
+        self.pick_event(which).ok().flatten()?;
+        Some((who.to_string(), which.to_string()))
+    }
+
+    /// Putting links on a gathering table or an event, and taking them
+    /// off: `put [the call](https://…) on the table`, `take the call off
+    /// Tea party`, `clear the table`.
+    fn links_command(&mut self, id: u64, verb: &str, rest: &str) -> Option<anyhow::Result<()>> {
+        match verb {
+            "put" | "pin" | "leave" | "stick" | "add" | "place" => {
+                let (links, onto) = meetings::put_words(rest)?;
+                Some(self.cmd_put_links(id, &links, &onto))
+            }
+            "take" | "remove" | "unpin" => {
+                let (what, from) = meetings::take_words(rest)?;
+                self.cmd_take_links(id, &what, &from, false)
+            }
+            "clear" | "empty" | "tidy" if !rest.trim().is_empty() => {
+                self.cmd_take_links(id, "all", rest, true)
+            }
+            _ => None,
+        }
+    }
+
     fn here(&self, id: u64) -> Option<(i64, i64, String)> {
         self.players.get(&id).map(|p| (p.x, p.y, p.name.clone()))
     }
@@ -2393,7 +2427,7 @@ impl Game {
                 self.say1(
                     id,
                     Line::plain(
-                        "There's already a gathering spot here. Give it its links: meet https://…",
+                        "There's already a gathering spot here. Leave a link on it: put [the call](https://…) on the table",
                     ),
                 );
                 return Ok(());
@@ -2414,20 +2448,20 @@ impl Game {
                     .b(Col::Cyan, &name)
                     .c(
                         Col::Cyan,
-                        ". Give it a link or two for whatever happens here: meet https://…",
+                        ". Leave a link or two on it for whatever happens here: put [the call](https://…) on the table",
                     ),
             );
             self.say1(
                 id,
                 Line::col(
                     Col::Dim,
-                    "Then anyone here can type meet to get them. Events here bring them along too, after their own.",
+                    "Then anyone here can meet to join in, and every event planned here brings them along.",
                 ),
             );
             if matches!(self.board_here(x, y), Some((_, false))) {
                 self.say1(id, Line::col(Col::Dim, "It's beside a noticeboard, so events planned here remind whoever follows the board, with these links."));
             }
-            self.say1(id, Line::col(Col::Dim, "Next: plan something here (event here fri 4pm Tea party), then bring your people: add Poppy, Sam to event 1. (help gatherings)"));
+            self.say1(id, Line::col(Col::Dim, "Next: plan something here (event here fri 4pm Tea party), then bring your people: add Poppy, Sam to Tea party. (help gatherings)"));
             self.tell_here(
                 x,
                 y,
@@ -3884,8 +3918,8 @@ const HELP: &[HelpTopic] = &[
                 "a repeating one (also weekdays, daily, every mon wed)",
             ),
             (
-                "add Poppy, Sam to event 2",
-                "sign people up to a 📍 event (its host, or anyone going); remove Poppy from event 2 for the host",
+                "add Poppy, Sam to Tea party",
+                "sign people up to a 📍 event (its host, or anyone going); remove Poppy from Tea party for the host",
             ),
             (
                 "going 2 / not going 2",
@@ -4146,8 +4180,8 @@ const HELP: &[HelpTopic] = &[
                 "also: at night, during the day, when it's sunny, when someone arrives",
             ),
             (
-                "make a gathering table / meet https://…",
-                "a spot that holds links for gatherings there (up to three); meet hands them over (meet off clears them)",
+                "make a gathering table",
+                "a spot for gatherings: put [the call](https://…) on the table, and meet joins in (help gatherings)",
             ),
             ("push bench north", "move something"),
             (
@@ -4207,53 +4241,57 @@ const HELP: &[HelpTopic] = &[
             "get-togethers",
             "together",
         ],
-        title: "🫖 gatherings: a spot for your group",
+        title: "🫖 gatherings: a spot for your crew",
         keepers: false,
         listed: true,
         items: &[
             (
                 "go to the village green",
-                "everyone's spot: a village noticeboard, and a long table anyone can leave links on (or make your own, below)",
+                "everyone's spot, with a long table and a noticeboard already there. Have a peek before you make your own!",
             ),
             (
-                "name The Frog Pond Gazebo",
-                "1. find a spot and name it, so it's easy to find (places, go to)",
+                "name The Frog Pond",
+                "1. pick a spot and give it a name, so it's easy to find (go to The Frog Pond)",
             ),
             (
                 "make a gathering table",
-                "2. somewhere to gather (a gazebo works too)",
+                "2. the table is the what: it holds links for whatever you get up to, like a call, a snack list or a song (a gazebo works too)",
             ),
             (
-                "meet [the call](https://…) https://…",
-                "3. leave links there for whatever you get up to (up to three; words in [ ] show instead of the address)",
+                "put [the call](https://…) on the table",
+                "3. leave up to three links on it. Words in [ ] show instead of the long address. take the call off the table takes one back, and clear the table takes the lot",
             ),
             (
-                "event here weekdays 7am Sunrise stretch",
-                "4. plan it at the table (or a one-off: event here fri 4pm Tea party)",
+                "meet",
+                "join in: hands you everything on the table, and tells everyone you've popped off to the gathering",
             ),
             (
-                "add Poppy, Sam to event 1",
-                "5. bring your people: they hear about it from anywhere, with the links",
+                "event here fri 4pm Tea party",
+                "4. an event is the when. Plan it at the table and it brings whatever's on the table along, so change the table and every event there changes too (or repeat it: event here weekdays 7am Sunrise stretch)",
             ),
             (
-                "events",
-                "what's coming up, who's going, and the links (go event 1 walks there, meet hands over the links)",
+                "put [the zoom](https://…) on Tea party",
+                "events can have links of their own too, just for that one, like their own call. Those come first, then the table's (take the zoom off Tea party)",
             ),
             (
-                "not going 1 / leave event 1",
-                "skip just the next one of a repeating event, or drop out for good",
+                "add Poppy, Sam to Tea party",
+                "5. bring your people: they hear about it from anywhere, links and all (remove Poppy from Tea party)",
             ),
             (
-                "remove Poppy from event 1",
-                "take someone off (the host or a keeper)",
+                "going Tea party / not going Tea party",
+                "say you're coming, so you're reminded wherever you are. On a repeating one, not going skips just the next (leave event Tea party drops out for good)",
             ),
             (
                 "make a noticeboard",
-                "optional: a board on the same spot is a chat for the group, and its followers hear about everything planned there",
+                "optional, and it's the who: a board on the same spot is your crew's chat, and everyone following it hears about every event planned there",
+            ),
+            (
+                "events",
+                "what's coming up, who's going and the links. Call events by their name (or their number there)",
             ),
         ],
         footer: Some(
-            "Times are your own, and everyone sees them in theirs. cancel event 1 stops one (or a whole repeating series).",
+            "📌 board = who · 🪑 table = what · 📅 event = when. Times are your own, and everyone sees them in theirs. cancel Tea party stops one (or a whole repeating series).",
         ),
     },
     HelpTopic {
@@ -4353,8 +4391,8 @@ const HELP: &[HelpTopic] = &[
                 "an event with links (at a gathering table, the table's come along too)",
             ),
             (
-                "event links 1 [the call](https://…)",
-                "change an event's links (event links 1 off clears them)",
+                "put [the call](https://…) on Beach party",
+                "give an event links of its own (take the call off Beach party)",
             ),
             (
                 "station add Night Owl FM https://… [guide https://…]",

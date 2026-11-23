@@ -3,7 +3,7 @@
 Everyone arrives on **The Village Green**, in the middle of Home Island. The
 Island Journal stands there, with the village noticeboard and a long table for
 gatherings beside it: the island's notes, hooks and plans can all live there,
-and anyone can leave links on the table (`meet https://…`) for whatever happens
+and anyone can leave links on the table (`put [the call](https://…) on the table`) for whatever happens
 at it. Worlds that started before the green get one the next time they start,
 wherever there's room around the Journal.
 
