@@ -249,7 +249,7 @@ impl Game {
                     };
                     self.say1(id, Line::col(Col::Cyan, on));
                 } else {
-                    self.say1(id, Line::col(Col::Cyan, super::travel::arrived(&place)));
+                    self.arrive(id, &place);
                 }
             }
         }

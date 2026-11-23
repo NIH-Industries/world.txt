@@ -187,7 +187,7 @@ impl Game {
         if let Some(p) = self.players.get_mut(&id) {
             p.fishing = None;
         }
-        self.set_off(id, hx, hy, "home", None)
+        self.set_off(id, hx, hy, "home", None, None)
     }
 
     pub(super) fn cmd_invite(&mut self, id: u64, who: &str, on: bool) -> anyhow::Result<()> {

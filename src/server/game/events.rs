@@ -412,6 +412,16 @@ impl Game {
         }
     }
 
+    /// Where an event is, to follow its name or time: " at The Frog Pond",
+    /// or " inside Poppy's cottage" for one indoors.
+    fn at_place(&self, x: i64, y: i64) -> String {
+        let title = self.world.place_title(x, y);
+        match title.strip_prefix("Inside ") {
+            Some(rest) => format!(" inside {rest}"),
+            None => format!(" at {title}"),
+        }
+    }
+
     fn my_zone(&self, id: u64) -> Tz {
         self.players.get(&id).map_or(chrono_tz::UTC, |p| p.tz)
     }
@@ -478,7 +488,7 @@ impl Game {
             None => (name, vec![]),
         };
         let name: String = name.chars().take(80).collect();
-        let place = self.world.place_title(x, y);
+        let place = self.at_place(x, y);
         let event = self
             .world
             .db
@@ -543,7 +553,7 @@ impl Game {
             Line::new()
                 .c(Col::Yellow, "📅 Planned: ")
                 .b(Col::Yellow, &name)
-                .c(Col::Yellow, format!(" · {when} at {place}{call}. {who}")),
+                .c(Col::Yellow, format!(" · {when}{place}{call}. {who}")),
         );
         if let Some(story) = self.links_story(link.as_deref(), x, y) {
             self.say1(id, Line::col(Col::Dim, format!("   {story}")));
@@ -580,7 +590,7 @@ impl Game {
             self.world.db.add_note(
                 board,
                 &host,
-                &format!("📅 {name} · {when} at {place}{call}"),
+                &format!("📅 {name} · {when}{place}{call}"),
                 now,
                 &super::boards::week_key(now),
                 None,
@@ -605,7 +615,7 @@ impl Game {
             Line::new()
                 .c(Col::Yellow, "📅 Coming up: ")
                 .b(Col::Yellow, &name)
-                .c(Col::Yellow, format!(" · {} at {place}{call}", when_for(tz)))
+                .c(Col::Yellow, format!(" · {}{place}{call}", when_for(tz)))
                 .c(Col::Dim, invite)
         };
         if let Some(e) = row {
@@ -628,7 +638,7 @@ impl Game {
     /// Tell people they've been invited to an event: straight away if
     /// they're here, or a note waiting for when they arrive.
     fn send_invites(&mut self, from: &str, e: &EventRow, users: &[String]) -> anyhow::Result<()> {
-        let place = self.world.place_title(e.x, e.y);
+        let place = self.at_place(e.x, e.y);
         let call = self.event_links(e).map_or(String::new(), |l| {
             format!(" · 🔗 {}", super::meetings::shown(&l))
         });
@@ -653,14 +663,14 @@ impl Game {
                         .b(Col::Yellow, &e.name)
                         .c(
                             Col::Yellow,
-                            format!(" · {} at {place}{call}", when(p.tz, false)),
+                            format!(" · {}{place}{call}", when(p.tz, false)),
                         )
                         .c(Col::Dim, " (events lists it; not going drops out)");
                     self.say1(pid, line);
                 }
                 None => {
                     let note = format!(
-                        "📅 invited you to {} · {} at {place}{call} (events lists it; not going drops out)",
+                        "📅 invited you to {} · {}{place}{call} (events lists it; not going drops out)",
                         e.name,
                         when(self.zone_of(u), true)
                     );
@@ -848,7 +858,7 @@ impl Game {
             ));
         }
         for (i, e) in events.iter().enumerate() {
-            let place = self.world.place_title(e.x, e.y);
+            let place = self.at_place(e.x, e.y);
             let now = super::boards::now();
             let when = if e.at <= now {
                 "happening now!".to_string()
@@ -861,7 +871,7 @@ impl Game {
                 Line::new()
                     .c(Col::Yellow, format!("  {}. {pin}", i + 1))
                     .b(Col::Yellow, e.name.clone())
-                    .t(format!(" · {when} at {place}"))
+                    .t(format!(" · {when}{place}"))
                     .c(
                         Col::Dim,
                         format!(" (hosted by {})", self.world.nick(&e.host)),
@@ -932,7 +942,7 @@ impl Game {
                 .unwrap_or(&events[0])
                 .name
                 .clone();
-            lines.push(Line::col(Col::Dim, format!("  Call them by name or number: going {name} · add Poppy to {name} · go event 1 walks you there")));
+            lines.push(Line::col(Col::Dim, format!("  Call them by name or number: going {name} · add Poppy to {name} · go to {name} walks you there")));
         }
         self.send(id, lines);
         Ok(())
@@ -970,7 +980,7 @@ impl Game {
             );
             return Ok(());
         }
-        let place = self.world.place_title(e.x, e.y);
+        let place = self.at_place(e.x, e.y);
         // A repeating event: not going means just the next one.
         if e.repeat.is_some() {
             let on = self.world.db.going(e.id)?.contains(&me);
@@ -994,7 +1004,7 @@ impl Game {
         let changed = self.world.db.set_going(e.id, &me, going)?;
         let msg = match (going, changed) {
             (true, true) => format!(
-                "📅 You're going to {} ({} at {place}{}). You'll get a reminder wherever you are.",
+                "📅 You're going to {} ({}{place}{}). You'll get a reminder wherever you are.",
                 e.name,
                 when_label(e.at, self.my_zone(id)),
                 self.event_links(&e).map_or(String::new(), |l| format!(
@@ -1064,21 +1074,41 @@ impl Game {
             );
             return Ok(());
         };
-        self.step_out_first(id)?;
-        let place = self.world.place_title(e.x, e.y);
-        if let Some(p) = self.players.get_mut(&id) {
-            p.travel = None;
-            p.walk_to = Some((e.x, e.y, place.clone()));
+        let Some((x, y, _)) = self.here(id) else {
+            return Ok(());
+        };
+        if (x, y) == (e.x, e.y) {
+            self.say1(id, Line::plain(format!("You're already at {}. 💅", e.name)));
+            return Ok(());
         }
-        self.say1(
-            id,
-            Line::col(
-                Col::Cyan,
-                format!("🚶 You set off for {} at {place}. (stop to stop)", e.name),
-            ),
-        );
-        self.step_travellers();
-        Ok(())
+        // Indoors: walk to the building's door, then step in.
+        let door = self.world.outside(e.x, e.y);
+        let building = super::super::world::room_of(e.x, e.y)
+            .and_then(|_| self.world.room_building(e.x, e.y))
+            .map(|b| b.name.clone());
+        let place = self.at_place(e.x, e.y);
+        let label = match &building {
+            // "Tea party, inside Poppy's cottage".
+            Some(_) => format!("{},{place}", e.name),
+            None => format!("{}{place}", e.name),
+        };
+        if building.is_some() && self.world.outside(x, y) == door && !self.in_room(id) {
+            self.say1(
+                id,
+                Line::col(Col::Cyan, format!("🚪 {} is just inside.", e.name)),
+            );
+            return self.cmd_enter(id, building.as_deref().unwrap_or_default());
+        }
+        if self.world.outside(x, y) == door {
+            // Inside another room on the same spot: out, and back in.
+            self.step_out_first(id)?;
+            if let Some(p) = self.players.get_mut(&id) {
+                p.then_in = building;
+            }
+            self.arrive(id, &label);
+            return Ok(());
+        }
+        self.set_off(id, door.0, door.1, &label, None, building)
     }
 
     pub(super) fn cmd_cancel_event(&mut self, id: u64, which: &str) -> anyhow::Result<()> {
@@ -1294,7 +1324,7 @@ impl Game {
             return;
         };
         for e in events {
-            let place = self.world.place_title(e.x, e.y);
+            let place = self.at_place(e.x, e.y);
             if e.at < now - ROLL_AFTER && e.repeat.is_some() {
                 continue;
             }
@@ -1304,7 +1334,7 @@ impl Game {
                 with_call(
                     Line::new().b(
                         Col::Yellow,
-                        format!("🎉 {} is starting now at {place}!", e.name),
+                        format!("🎉 {} is starting now{place}!", e.name),
                     ),
                     &links,
                 )
@@ -1321,7 +1351,7 @@ impl Game {
                     Line::new()
                         .c(Col::Yellow, format!("📅 In {mins}: "))
                         .b(Col::Yellow, e.name.clone())
-                        .c(Col::Yellow, format!(" at {place}")),
+                        .c(Col::Yellow, place.clone()),
                     &links,
                 )
                 .c(Col::Dim, " (go event)")

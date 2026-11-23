@@ -17,11 +17,19 @@ events there bring links of their own. `meet https://…`, `meet off` and
 looking up its number first, like `going Tea party` and `cancel Tea party`
 already did. Numbers from `events` still work too.
 
+### Going to events indoors
+`go event Book club` (or just `go to Book club`) walks you to an event
+planned inside a building, to its door and in. Before, an indoor event
+couldn't be found over land. It rows you over to events on other islands
+too, and events by name work here like everywhere else. Indoor events read
+"inside Poppy's cottage" rather than "at Inside Poppy's cottage".
+
 ### Help for gatherings
 `help gatherings` explains how it all fits: a noticeboard is who, a table is
 what, and an event is when. It also says events can have links of their
 own, and its example place is The Frog Pond rather than a Gazebo you'd then
-make a gazebo in.
+make a gazebo in. Examples like `[the call](https://…)` show just as you'd
+type them, brackets and all, rather than as a link.
 
 ### Make what's in the recipes
 `make a feather cushion` (or any name from `recipes`) now crafts it from your

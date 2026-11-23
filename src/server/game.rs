@@ -100,6 +100,9 @@ struct Player {
     heading: Option<(i64, i64, String)>,
     /// Who they're off to find once they've rowed across (`join`), by username.
     join_after: Option<String>,
+    /// The building they'll step into on arriving (`go event` to an event
+    /// indoors), by name.
+    then_in: Option<String>,
     /// Out on the water in a rowing boat.
     voyage: Option<sailing::Voyage>,
     /// Their timezone, so times read as theirs.
@@ -757,6 +760,7 @@ impl Game {
                 walk_to: None,
                 heading: None,
                 join_after: None,
+                then_in: None,
                 voyage: None,
                 tz,
                 tz_known,
@@ -3821,12 +3825,11 @@ fn world_zone() -> chrono_tz::Tz {
         .unwrap_or(chrono_tz::UTC)
 }
 
-/// `go event` or `go to event 2`, but not `go to Eventide Cove`.
+/// `go event`, `go to event 2` or `go event Book club`, but not `go to
+/// Eventide Cove`.
 fn is_go_event(rest: &str) -> bool {
-    let r = rest.trim().trim_start_matches("to ").trim();
-    r == "event"
-        || r.strip_prefix("event ")
-            .is_some_and(|n| n.trim().parse::<usize>().is_ok())
+    let r = rest.trim().trim_start_matches("to ").trim().to_lowercase();
+    r == "event" || r.starts_with("event ")
 }
 
 fn the(name: &str) -> String {
@@ -4547,6 +4550,7 @@ mod tests {
     #[test]
     fn go_event_isnt_a_place_starting_event() {
         assert!(is_go_event("event") && is_go_event("to event 2") && is_go_event("event 3"));
+        assert!(is_go_event("event Book club") && is_go_event("to Event book club"));
         assert!(!is_go_event("to Eventide Cove") && !is_go_event("eventide"));
     }
 

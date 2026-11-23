@@ -51,11 +51,12 @@ fn link_at(s: &str) -> Option<(&str, &str, usize)> {
     let after = &s[close + 2..];
     let end = after.find(')')?;
     let url = &after[..end];
+    // "https://…" is a placeholder in help, shown just as it's typed.
     let ok = url.starts_with("https://")
         && url.len() > "https://".len()
         && !url
             .chars()
-            .any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\''));
+            .any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\'' | '…'));
     ok.then_some((label.trim(), url, close + 2 + end + 1))
 }
 
@@ -186,6 +187,14 @@ mod tests {
         assert_eq!(
             labels("[the cat cam](https://cats.example.com/cam) is on"),
             "the cat cam is on"
+        );
+    }
+
+    #[test]
+    fn help_placeholders_stay_as_typed() {
+        assert_eq!(
+            pieces("put [the call](https://…) on the table"),
+            vec![Piece::Text("put [the call](https://…) on the table")]
         );
     }
 

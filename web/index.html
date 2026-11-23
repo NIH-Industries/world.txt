@@ -381,7 +381,9 @@ function linkify(el, text) {
     a.href = url; a.textContent = label; a.title = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
     return a;
   };
-  const re = /\[([^\[\]\n]{1,100})\]\((https:\/\/[^\s<>"')]+)\)|(https:\/\/[^\s<>"']+)/g;
+  // An address of "…" is a placeholder in help (put [the call](https://…) on
+  // the table), shown as typed so people can see what to type.
+  const re = /\[([^\[\]\n]{1,100})\]\((https:\/\/[^\s<>"')…]+)\)|(https:\/\/[^\s<>"'…]+)/g;
   let at = 0;
   for (const m of text.matchAll(re)) {
     if (m.index > at) el.append(text.slice(at, m.index));
